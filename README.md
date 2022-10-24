@@ -12,3 +12,4 @@ To install the library, you can use `pip` to download it from the Python Package
 ~~~
 pip install richvalues
 ~~~
+Library project on PyPI: [https://pypi.org/project/richvalues/](https://pypi.org/project/richvalues/)
