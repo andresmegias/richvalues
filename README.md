@@ -8,7 +8,7 @@ You can read the user guide (`richvalues-userguide.pdf`) to learn how to use it.
 
 ## Installation
 
-To install the library, you can use the Python Package Installer to download it from the Python Package Index (PyPI). To do so, run from the terminal the following command
+To install the library, you can use the Python Package Installer to download it from the Python Package Index (PyPI). To do so, run from the terminal the following command:
 ~~~
 pip3 install richvalues
 ~~~
