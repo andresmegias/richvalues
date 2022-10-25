@@ -35,8 +35,8 @@ if use_create_column:
                                domain = [0, np.inf])
 else:
     ratio = rv.rich_array(data['HCCCN'] / data['CH3CN'])
-t2 = time.time()
 data['ratio'] = ratio
+t2 = time.time()
 print('Elapsed time for calculations: {:.3f} s.'.format(t2-t1))
 
 # Exporting of the data.
