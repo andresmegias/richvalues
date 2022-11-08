@@ -281,12 +281,13 @@ def round_sf_unc(x, dx,
         y = sign + y
     if not use_exp:
         y = y.replace('e0','')
-        dy = dy.replace('e0','').replace('00','0')
+        dy = dy.replace('e0','')
     else:
         if not np.isinf(x):
             a = int('{:e}'.format(float(y)).split('e')[1])
             if abs(a) < min_exp:
-                y, dy = round_sf_unc(x, dx, n-1, np.inf, lim_for_extra_sf)
+                x = float(sign + str(x))
+                y, dy = round_sf_unc(x, dx, n, np.inf, lim_for_extra_sf)
     return y, dy
 
 
@@ -414,7 +415,7 @@ class RichValue():
         if not (is_lolim or is_uplim or is_range) and unc[1] < 0:
             unc_text = ('Superior uncertainty' if hasattr(unc_or, '__iter__')
                         else 'Uncertainty')
-            raise Exception('{} must be positive.'.format(unc_text))
+            raise Exception('{} cannot be negative.'.format(unc_text))
         if (not np.isnan(center) and unc != [0,0]
                 and not domain[0] <= center <= domain[1]):
             raise Exception('Invalid domain {} for center in {}.'
@@ -583,8 +584,7 @@ class RichValue():
                 a = int(text.split('e')[1])
                 if abs(a) < min_exp:
                     text = str(RichValue(x, dx, is_lolim, is_uplim, n, np.inf,
-                                         domain, self.len_sample,
-                                         allow_log_scale))
+                                     domain, self.len_sample, allow_log_scale))
             else:
                 text = text.replace(' e0','')
         elif not is_range and np.isnan(center):
@@ -991,8 +991,8 @@ class RichValue():
                 y[(x > x1) & (x < x2)] = 1 / (x2 - x1)
         return y
     
-    def distr(self, N=None):
-        """Distribution corresponding to the rich value"""
+    def sample(self, N=None):
+        """Sample of the distribution corresponding to the rich value"""
         center = copy.copy(self.center)
         unc = copy.copy(self.unc)
         domain = copy.copy(self.domain)
@@ -1232,6 +1232,16 @@ class RichArray(np.ndarray):
             new_array = np.append(new_array, x)
         new_array = rich_array(new_array.reshape(self.shape))
         self.uncs = new_array.uncs
+
+    def sample(self, N=None):
+        """Obtain a sample of each entry of the array"""
+        N = self.len_sample if N is None else N
+        new_array = np.empty(0, float)
+        for x in self.flat:
+            new_array = np.append(new_array, x.sample(N))
+        new_shape = (*self.shape, N) if N != 1 else self.shape
+        new_array = new_array.reshape(new_shape)
+        return new_array
 
     def function(self, function, **kwargs):
         """Apply a function to the rich array."""
@@ -1825,7 +1835,6 @@ def rich_dataframe(df, num_sf={}, min_exp={}, domain={}, len_sample={},
         if use_default_allow_log_scale:
             allow_log_scale[col] = (x.allow_log_scale if is_number else
                                     defaultparams['allow logarithmic scale'])
-
     if type(num_sf) is not dict:
         num_sf = {col: num_sf for col in df}
     if type(min_exp) is not dict:
@@ -1874,7 +1883,7 @@ def general_pdf(x, loc=0, scale=1, bounds=None, norm=False):
     If the width of the distributiin is quite lower than the boundaries,
     the PDF (probability density function) will be a modified gaussian for the
     given range. If not, it will be a trapezoidal distribution with a flat with
-    a width equal to the uncertainty.
+    a width greater than the uncertainty.
     
     Parameters
     ----------
@@ -1910,7 +1919,7 @@ def general_pdf(x, loc=0, scale=1, bounds=None, norm=False):
         if a >= 2*s:
             y = bounded_gaussian(x, m, s, a)
         elif a > s:
-            y = symmetric_loggaussian(x, m, s, a)
+            y = mirrored_loggaussian(x, m, s, a)
         else:
             raise Exception('Domain must be greater than uncertainty.')
         if norm:
@@ -2260,7 +2269,7 @@ def distribution_with_rich_values(function, args, len_args_samples=None):
     if len_args_samples is None:
         len_args_samples = int(len(args)
                                * np.mean([arg.len_sample for arg in args]))
-    args_distr = [arg.distr(len_args_samples) for arg in args]
+    args_distr = [arg.sample(len_args_samples) for arg in args]
     new_distr = function(*args_distr)
     return new_distr
 
@@ -2436,7 +2445,7 @@ def function_with_rich_values(
                 domain_distr = function(*domain_args)
                 domain1, domain2 = min(domain_distr), max(domain_distr)
             domain1, domain2 = remove_zero_infs([domain1, domain2])
-            args_distr = [arg.distr(len_args_samples) for arg in args]
+            args_distr = [arg.sample(len_args_samples) for arg in args]
             new_distr = function(*args_distr)
             x1, x2 = min(new_distr), max(new_distr)
             center, unc = center_and_uncs(new_distr)
@@ -2459,7 +2468,7 @@ def function_with_rich_values(
             if cond_hr1:
                 xx1, xx2, xxc = [x1], [x2], [center]
                 for i in range(num_reps_lims):
-                    args_distr = [arg.distr(len_args_samples) for arg in args]
+                    args_distr = [arg.sample(len_args_samples) for arg in args]
                     new_distr = function(*args_distr)
                     x1i, x2i = min(new_distr), max(new_distr)
                     xci = np.median(new_distr)
@@ -2490,7 +2499,7 @@ def function_with_rich_values(
                   or (not cond_range and not cond_hr2 and cond_lr)):
                 xx1, xx2 = [x1], [x2]
                 for i in range(num_reps_lims):
-                    args_distr = [arg.distr(len_args_samples) for arg in args]
+                    args_distr = [arg.sample(len_args_samples) for arg in args]
                     new_distr = function(*args_distr)
                     x1i, x2i = min(new_distr), max(new_distr)
                     xx1 += [x1i]
@@ -2712,9 +2721,9 @@ def bounded_gaussian(x, m=0., s=1., a=10., norm=False):
         y /= np.trapz(yl, xl).sum()
     return y
 
-def symmetric_loggaussian(x, m=0., s=1., a=10., norm=False):
+def mirrored_loggaussian(x, m=0., s=1., a=10., norm=False):
     """
-    Symmetric log-gaussian function.
+    Mirrored log-gaussian function.
 
     Parameters
     ----------
@@ -2723,7 +2732,7 @@ def symmetric_loggaussian(x, m=0., s=1., a=10., norm=False):
     m : float, optional
         Median of the curve. The default is 0.
     s : float, optional
-        Width of the curve (similar to the standard deviation).
+        Uncertainty (defines the 1 sigma confidence interval).
         The default is 1.
     a : float, optional
         Amplitude of the curve (distance to the domain edges).
