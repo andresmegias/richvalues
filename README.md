@@ -14,7 +14,7 @@ pip3 install richvalues
 ~~~
 Alternatively, you can use the Conda package installer:
 ~~~
-conda install -c richvalues richvalues
+conda install richvalues -c richvalues
 ~~~
 Links:
 * Library project on PyPI: https://pypi.org/project/richvalues/
