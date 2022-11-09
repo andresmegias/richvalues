@@ -12,4 +12,9 @@ To install the library, you can use the Python Package Installer to download it 
 ~~~
 pip3 install richvalues
 ~~~
+Alternatively, you can use the Conda package installer:
+~~~
+conda install -c richvalues richvalues
+~~~
 Library project on PyPI: https://pypi.org/project/richvalues/
+Library project on Anaconda website: https://anaconda.org/richvalues/richvalues 
