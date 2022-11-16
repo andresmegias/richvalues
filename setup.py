@@ -1,19 +1,22 @@
-from setuptools import setup, find_packages
-import pathlib
+import setuptools
 
-here = pathlib.Path(__file__).parent.resolve()
-long_description = (here / 'README.md').read_text(encoding='utf-8')
+with open('README.md', 'r') as file:
+    long_description = file.read()
 
-setup(
+setuptools.setup(
     name = 'richvalues',
-    version = '1.0.5',
+    version = '1.0.6',
     license = 'BSD-3-Clause',
     author = 'Andrés Megías Toledano',
     description = 'Python library for dealing with uncertainties and upper/lower limits',
     long_description = long_description,
     long_description_content_type = 'text/markdown',
-    packages = find_packages('src'),
-    package_dir = {'': 'src'},
+    packages = setuptools.find_packages(''),
     url = 'https://github.com/andresmegias/richvalues',
-    install_requires = ['numpy', 'pandas']
+    install_requires = ['numpy', 'pandas'],
+    classifiers = (
+        'Programming Language :: Python :: 3',
+        'License :: OSI Approved :: BSD License',
+        'Operating System :: OS Independent'
+    )
 )
