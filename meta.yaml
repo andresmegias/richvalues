@@ -1,25 +1,41 @@
+{% set name = "richvalues" %}
+{% set version = "1.0.5" %}
+
 package:
-    name: 'richvalues'
-    version: '1.0.5'
+  name: "{{ name|lower }}"
+  version: "{{ version }}"
 
 source:
-    git_rev: v1.0
-    git_url: https://github.com/andresmegias/richvalues
-    
+  url: "https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/{{ name }}-{{ version }}.tar.gz"
+  sha256: c9ce6e1f32cfcbaaa7c00582e3279e277ad7d9ec7a83114228872acdf284c517
+
+build:
+  number: 0
+
 requirements:
-    host:
-    - python
-    - setuptools
-    build:
-    - python
-    run:
-    - python
+  host:
     - numpy
     - pandas
+    - pip
+    - python
+  run:
+    - numpy
+    - pandas
+    - python
+
+test:
+  imports:
+    - richvalues
 
 about:
-    home: https://github.com/andresmegias/richvalues
-    license: BSD 3-Clause
-    license_family: BSD
-    license_file: LICENSE
-    summary: 'Python library for dealing with uncertainties and upper/lower limits'
+  home: "https://github.com/andresmegias/richvalues"
+  license: BSD-3-Clause
+  license_family: BSD
+  license_file: LICENSE
+  summary: "Python library for dealing with uncertainties and upper/lower limits"
+  doc_url: 
+  dev_url: 
+
+extra:
+  recipe-maintainers:
+    - andresmegias
