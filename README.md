@@ -4,7 +4,7 @@ Python 3 library for dealing with numeric values with uncertainties and upper/lo
 
 This library require the modules `copy`, `math`, and `itertools`, from the Python’s standard library, and also the libraries NumPy and Pandas.
 
-You can read the user guide (`userguide.pdf`) to learn how to use it.
+You can read the user guide (`richvalues-userguide.pdf`) to learn how to use it.
 
 ## Installation
 
