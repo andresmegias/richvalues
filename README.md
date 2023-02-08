@@ -2,7 +2,7 @@
 
 Python 3 library for dealing with numeric values with uncertainties and upper/lower limits, which may be called _rich values_. With it, one can import rich values written in plain text documents in an easily readable format, operate with them propagating the uncertainties automatically, and export them in the same formatting style as the import.
 
-The library NumPy, Pandas, SciPy and Matplotlib are required.
+The libraries NumPy, Pandas, SciPy and Matplotlib are required.
 
 You can read the user guide ([`richvalues-userguide.pdf`](https://github.com/andresmegias/richvalues/blob/main/richvalues-userguide.pdf)) to learn how to use it. You can also test the library in the example scripts inside the `examples` folder.
 
