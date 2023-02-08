@@ -5,18 +5,18 @@ with open('README.md', 'r') as file:
 
 setuptools.setup(
     name = 'richvalues',
-    version = '1.1.0',
+    version = '1.1.6',
     license = 'BSD-3-Clause',
     author = 'Andrés Megías Toledano',
     description = 'Python library for dealing with uncertainties and upper/lower limits',
     long_description = long_description,
     long_description_content_type = 'text/markdown',
-    packages = setuptools.find_packages(''),
+    packages = setuptools.find_packages('./'),
     url = 'https://github.com/andresmegias/richvalues',
     install_requires = ['numpy', 'pandas', 'scipy', 'matplotlib'],
-    classifiers = (
+    classifiers = [
         'Programming Language :: Python :: 3',
         'License :: OSI Approved :: BSD License',
         'Operating System :: OS Independent'
-    )
+    ]
 )
