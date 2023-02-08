@@ -1,5 +1,5 @@
 {% set name = "richvalues" %}
-{% set version = "1.1.0" %}
+{% set version = "1.1.2" %}
 
 package:
   name: "{{ name|lower }}"
@@ -7,29 +7,25 @@ package:
 
 source:
   url: "https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/{{ name }}-{{ version }}.tar.gz"
-  sha256: c9ce6e1f32cfcbaaa7c00582e3279e277ad7d9ec7a83114228872acdf284c517
+  sha256: 6dced5f59d6c6f0dfcdce348592471f3fb43699520c4d1d3f2decfbab12f92cf
 
 build:
   number: 0
 
 requirements:
   host:
-    - numpy
-    - pandas
-    - scipy
-    - matplotlib
+    - python
     - pip
-    - python
-  run:
     - numpy
     - pandas
     - scipy
     - matplotlib
+  run:
     - python
-
-test:
-  imports:
-    - richvalues
+    - numpy
+    - pandas
+    - scipy
+    - matplotlib
 
 about:
   home: "https://github.com/andresmegias/richvalues"
