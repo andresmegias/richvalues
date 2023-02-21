@@ -1,5 +1,5 @@
 {% set name = "richvalues" %}
-{% set version = "1.1.6" %}
+{% set version = "1.2.0" %}
 
 package:
   name: "{{ name|lower }}"
@@ -7,7 +7,7 @@ package:
 
 source:
   url: "https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/{{ name }}-{{ version }}.tar.gz"
-  sha256: 5c52e47ad4ffdc6c124c214eaa35ef123a1f99af52caeadeaa26c0dfd76d800b
+  sha256: 651feb6ebe40815b1bff43ffa1a4ace31b23d832e334513c52999d0b1ae884bb
 
 build:
   number: 0

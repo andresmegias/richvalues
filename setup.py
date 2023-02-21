@@ -5,7 +5,7 @@ with open('README.md', 'r') as file:
 
 setuptools.setup(
     name = 'richvalues',
-    version = '1.1.6',
+    version = '1.2.0',
     license = 'BSD-3-Clause',
     author = 'Andrés Megías Toledano',
     description = 'Python library for dealing with uncertainties and upper/lower limits',
