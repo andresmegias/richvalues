@@ -3,7 +3,7 @@
 """
 Rich Values Library
 -------------------
-Version 1.1
+Version 1.2
 
 Copyright (C) 2023 - Andrés Megías Toledano
 
@@ -38,6 +38,7 @@ POSSIBILITY OF SUCH DAMAGE.
 
 import copy
 import math
+import inspect
 import itertools
 import numpy as np
 import pandas as pd
@@ -49,13 +50,11 @@ defaultparams = {
     'number of significant figures': 1,
     'domain': [-np.inf, np.inf],
     'size of samples': 10000,
-    'minimum exponent for scientific notation': 4,
-    'allow logarithmic scale': False,
+    'number of significant figures': 1,
     'limit for extra significant figure': 2.5,
-    'minimum relative uncertainty range to use logarithmic scale': 5., 
-    'minimum relative distance to the domain edges ' \
-    + 'to apply analytic uncertainty propagation': 20.,
-    'use 1-sigma combinations to estimate uncertainty propagation': False,
+    'minimum exponent for scientific notation': 4,
+    'limit factor to use approximate uncertainty propagation': 20.,
+    'use 1-sigma combinations to approximate uncertainty propagation': False,
     'fraction of the central value for upper/lower limits': 0.1,
     'number of repetitions to estimate upper/lower limits': 4,
     'decimal exponent to define zero': -90.,
@@ -67,7 +66,7 @@ defaultparams = {
 def round_sf(x,
         n=defaultparams['number of significant figures'],
         min_exp=defaultparams['minimum exponent for scientific notation'],
-        lim_for_extra_sf=defaultparams['limit for extra significant figure']):
+        extra_sf_lim=defaultparams['limit for extra significant figure']):
     """
     Round the number to the given number of significant figures.
 
@@ -78,11 +77,12 @@ def round_sf(x,
     n : int, optional
         Number of significant figures. The default is 1.
     min_exp : int, optional
-        If use_exp is True, minimum decimal exponent, in absolute value, to
-        display the value in scientific notation. The default is 0.
-    lim_for_extra_sf : float, optional
+        Minimum decimal exponent, in absolute value, to display the value in
+        scientific notation. The default is 4.
+    extra_sf_lim : float, optional
         If the number expressed in scientific notation has a base that is lower
         than this value, an additional significant figure will be used.
+        The default is 2.5.
 
     Returns
     -------
@@ -100,14 +100,19 @@ def round_sf(x,
     sign = '-' if x < 0 else ''
     x = abs(x)
     base = '{:e}'.format(x).split('e')[0]
-    if round(float(base), n) <= lim_for_extra_sf:
+    if round(float(base), n) <= extra_sf_lim:
         n += 1
     y = str(float('{:.{}g}'.format(x, n)))
+    base_ = '{:e}'.format(float(y)).split('e')[0]
+    base_ = round(float(base_), n-1)
+    num_zeros = n-1 if round(float(base), n) <= extra_sf_lim else n
+    if x < 1 and float(base) != 1 and 1 == base_ <= extra_sf_lim:
+        y += '0'*num_zeros
     integers = len(y.split('.')[0])
     if x > 1 and integers >= n:
         y = y.replace('.0','')
-    digits = y.replace('.','')
-    for i in range(15):
+    digits = str(x).replace('.','')
+    for i in range(len(digits)-1):
         if digits.startswith('0'):
             digits = digits[1:]
     digits = len(digits)
@@ -128,7 +133,7 @@ def round_sf(x,
 def round_sf_unc(x, dx,
         n=defaultparams['number of significant figures'],
         min_exp=defaultparams['minimum exponent for scientific notation'],
-        lim_for_extra_sf=defaultparams['limit for extra significant figure']):
+        extra_sf_lim=defaultparams['limit for extra significant figure']):
     """
     Round a value and its uncertainty depending on their significant figures.
 
@@ -141,11 +146,12 @@ def round_sf_unc(x, dx,
     n : int, optional
         Number of significant figures. The default is 1.
     min_exp : int, optional
-        If use_exp is True, minimum decimal exponent, in absolute value, to
-        display the values in scientific notation. The default is 0.
-    lim_for_extra_sf : float, optional
+        Minimum decimal exponent, in absolute value, to display the values in
+        scientific notation. The default is 4.
+    extra_sf_lim : float, optional
         If the number expressed in scientific notation has a base that is lower
         than this value, an additional significant figure will be used.
+        The default is 2.5.
 
     Returns
     -------
@@ -157,7 +163,7 @@ def round_sf_unc(x, dx,
          and all(abs(np.floor(log10(abs(np.array([x, dx]))))) < min_exp))
          or (float(x) <= float(dx)
              and float('{:e}'.format(float(dx))
-                       .split('e')[0]) > lim_for_extra_sf
+                       .split('e')[0]) > extra_sf_lim
              and abs(np.floor(log10(abs(float(dx))))) < min_exp)
          or (float(dx) == 0 and abs(np.floor(log10(abs(x)))) < min_exp)
          or np.isinf(min_exp)):
@@ -175,15 +181,18 @@ def round_sf_unc(x, dx,
         a, b = int(a), int(b)
         y = float(y)
         dy = float(dy) * 10**(b - a)
-        if (a >= b) or (b == a+1 and round(dy/10, n) <= lim_for_extra_sf):
-            base_dy = float('{:e}'.format(dy).split('e')[0])
-            if round(base_dy, n) <= lim_for_extra_sf:
-                n += 1
-            exp_y = int('{:e}'.format(y).split('e')[1])
-            exp_dy = int('{:e}'.format(dy).split('e')[1])
-            m = max(0, n + exp_y - exp_dy)
-            y = '{:.{}g}'.format(y, m)
-            dy = '{:.{}g}'.format(dy, n)
+        if (a >= b) or (b == a+1 and round(dy/10, n) <= extra_sf_lim):
+            base_y, exp_y = '{:e}'.format(y).split('e')
+            base_dy, exp_dy = '{:e}'.format(dy).split('e')
+            base_y, base_dy = float(base_y), float(base_dy)
+            exp_y, exp_dy, = int(exp_y), int(exp_dy)
+            m = max(1, n + exp_y - exp_dy)
+            if base_dy <= extra_sf_lim:
+                m += 1
+            if base_y <= extra_sf_lim:
+                m -= 1
+            y = round_sf(y, m)
+            dy = round_sf(dy, n)
             if 'e' in dy:
                 dy, c = dy.split('e')
                 c = int(c)
@@ -192,13 +201,13 @@ def round_sf_unc(x, dx,
                     dy += '0'*c
                 else:
                     dy = '0.' + (abs(c)-int_dy)*'0' + dy.replace('.','')
-            num_zeros_y = m - len(y.replace('.',''))
+            num_zeros_y = n - len(y.replace('.',''))
             num_zeros_dy = n - len(dy.replace('.',''))
             y += '.'*(('.' not in y) & (num_zeros_y > 0)) + num_zeros_y*'0'
             dy += '.'*(('.' not in dy) & (num_zeros_dy > 0)) + num_zeros_dy*'0'
         else:
             y = '0e0'
-            dy = round_sf(dx, n, min_exp=0, lim_for_extra_sf=lim_for_extra_sf)
+            dy = round_sf(dx, n, min_exp=0, extra_sf_lim=extra_sf_lim)
         if float(y) == 10:
             _, a = '{:e}'.format(x).split('e')
             y = '{:.{}f}'.format(float(y)/10, m)
@@ -219,22 +228,22 @@ def round_sf_unc(x, dx,
                 dy = dy.replace('e+00','')
         else:
             y = '0e0'
-            dy = round_sf(dx, n, min_exp=0, lim_for_extra_sf=lim_for_extra_sf)
+            dy = round_sf(dx, n, min_exp=0, extra_sf_lim=extra_sf_lim)
     elif x == 0 and np.isinf(dx):
         y = '0e0'
         dy = 'inf'
     elif x == 0 and dx > 0:
         y = '0e0'
-        dy = round_sf(dx, n, min_exp=0, lim_for_extra_sf=lim_for_extra_sf)
+        dy = round_sf(dx, n, min_exp=0, extra_sf_lim=extra_sf_lim)
     elif dx == 0:
         if x != 0:
-            y = round_sf(x, n+1, min_exp=0, lim_for_extra_sf=lim_for_extra_sf)
+            y = round_sf(x, n+1, min_exp=0, extra_sf_lim=extra_sf_lim)
         else:
             y = '0' + use_exp*'e0'
         dy = '0e0'
     else:
         if not np.isinf(x):
-            y = round_sf(x, n+1, min_exp=0, lim_for_extra_sf=lim_for_extra_sf)
+            y = round_sf(x, n+1, min_exp=0, extra_sf_lim=extra_sf_lim)
             dy = y
         else:
             y, dy = 'inf', '0'
@@ -289,14 +298,14 @@ def round_sf_unc(x, dx,
             a = int('{:e}'.format(float(y)).split('e')[1])
             if abs(a) < min_exp:
                 x = float(sign + str(x))
-                y, dy = round_sf_unc(x, dx, n, np.inf, lim_for_extra_sf)
+                y, dy = round_sf_unc(x, dx, n, np.inf, extra_sf_lim)
     return y, dy
 
 
 def round_sf_uncs(x, dx,
         n=defaultparams['number of significant figures'],
         min_exp=defaultparams['minimum exponent for scientific notation'],
-        lim_for_extra_sf=defaultparams['limit for extra significant figure']):
+        extra_sf_lim=defaultparams['limit for extra significant figure']):
     """
     Round a value and its uncertainties depending on their significant figures.
 
@@ -309,11 +318,12 @@ def round_sf_uncs(x, dx,
     n : int, optional
         Number of significant figures. The default is 1.
     min_exp : int, optional
-        If use_exp is True, minimum decimal exponent, in absolute value, to
-        apply scientific notation. The default is 0.
-    lim_for_extra_sf : float, optional
+        Minimum decimal exponent, in absolute value, to apply scientific
+        notation. The default is 4.
+    extra_sf_lim : float, optional
         If the number expressed in scientific notation has a base that is lower
         than this value, an additional significant figure will be used.
+        The default is 2.5.
 
     Returns
     -------
@@ -322,19 +332,19 @@ def round_sf_uncs(x, dx,
     """
     dx1, dx2 = dx
     y1, dy1 = round_sf_unc(x, dx1, min_exp=0,
-                           lim_for_extra_sf=lim_for_extra_sf)
+                           extra_sf_lim=extra_sf_lim)
     y2, dy2 = round_sf_unc(x, dx2, min_exp=0,
-                           lim_for_extra_sf=lim_for_extra_sf)
-    num_sf_1 = len(y1.split('e')[0].replace('.',''))
-    num_sf_2 = len(y2.split('e')[0].replace('.',''))
-    if num_sf_2 > num_sf_1:
-        diff = num_sf_2 - num_sf_1
-        y1, dy1 = round_sf_unc(x, dx1, n+diff, min_exp, lim_for_extra_sf)
-        y2, dy2 = round_sf_unc(x, dx2, n, min_exp, lim_for_extra_sf)
+                           extra_sf_lim=extra_sf_lim)
+    num_dec_1 = len(y1.split('e')[0].replace('.',''))
+    num_dec_2 = len(y2.split('e')[0].replace('.',''))
+    if num_dec_2 > num_dec_1:
+        diff = num_dec_2 - num_dec_1
+        y1, dy1 = round_sf_unc(x, dx1, n+diff, min_exp, extra_sf_lim)
+        y2, dy2 = round_sf_unc(x, dx2, n, min_exp, extra_sf_lim)
     else:
-        diff = num_sf_1 - num_sf_2
-        y1, dy1 = round_sf_unc(x, dx1, n, min_exp, lim_for_extra_sf)
-        y2, dy2 = round_sf_unc(x, dx2, n+diff, min_exp, lim_for_extra_sf)
+        diff = num_dec_1 - num_dec_2
+        y1, dy1 = round_sf_unc(x, dx1, n, min_exp, extra_sf_lim)
+        y2, dy2 = round_sf_unc(x, dx2, n+diff, min_exp, extra_sf_lim)
     y = y1 if dx2 > dx1 else y2
     dy = [dy1, dy2]
     return y, dy
@@ -344,97 +354,75 @@ class RichValue():
     A class to store a value with uncertainties or with upper/lower limits.
     """
     
-    def __init__(self, center, unc=0, is_lolim=False, is_uplim=False,
-                 num_sf=defaultparams['number of significant figures'],
-                 min_exp=defaultparams['minimum exponent for '
-                                       + 'scientific notation'],
-                 domain=defaultparams['domain'],
-                 len_sample=defaultparams['size of samples'],
-                 allow_log_scale=defaultparams['allow logarithmic scale']):
+    def __init__(self, main, unc=0, is_lolim=False, is_uplim=False,
+                 is_range=False, domain=defaultparams['domain']):
         """
         Parameters
         ----------
-        center : float
+        main : float
             Central value of the rich value, or value of the upper/lower limit.
         unc : float / list (float), optional
             Lower and upper uncertainties associated with the central value.
             The default is [0,0].
-        is_lolim : bool
-            If True, it means that the central value is actually a lower limit.
+        is_lolim : bool, optional
+            If True, it means that the main value is actually a lower limit.
             The default is False.
-        is_uplim : bool
-            If True, it means that the central value is actually an upper limit.
+        is_uplim : bool, optional
+            If True, it means that the main value is actually an upper limit.
             The default is False.
-        num_sf : int, optional
-            Number of significant figures to use for displaying the numbers.
-            The default is 1.
-        min_exp : int, optional
-            If use_exp is True, minimum decimal exponent, in absolute value, to
-            apply scientific notation. The default is 4.
+        is_range : bool, optional
+            If True, it means that the rich value is actually a constant range
+            of values defined by the main value and the uncertainties.
         domain : list (float), optional
             The domain of the rich value, that is, the minimum and maximum
             values that it can take.
-        len_sample : int, optional
-            In case a function has to be applied to this rich value and there
-            is no analytic formula for propagating the uncertainties, it will
-            be calculated from distributions with this number of samples.
-            The default is 10000.
-        allow_log_scale : bool, optional
-            If True, the value will be displayed as an exponent in decimal
-            base. The default is False.
         """
-        is_range = False
         unc_or = copy.copy(unc)
-        if type(center) in [list, tuple]:
-            if center[0] == domain[0]:
+        if type(main) in [list, tuple]:
+            if main[0] == domain[0]:
                 is_uplim = True
                 unc = 0
-            if center[1] == domain[1]:
+            if main[1] == domain[1]:
                 is_lolim = True
                 unc = 0
             if is_lolim and is_uplim:
-                center = np.nan
+                main = np.nan
                 unc = np.inf
             elif is_uplim:
-                center = center[1]
+                main = main[1]
             elif is_lolim:
-                center = center[0]
+                main = main[0]
             if not (is_lolim or is_uplim):
                 is_range = True
-                if center[0] >= center[1]:
-                    raise Exception('Wrong interval: {}'.format(center))
-                unc = (center[1] - center[0]) / 2
-                center = (center[0] + center[1]) / 2
+                if main[0] >= main[1]:
+                    raise Exception('Wrong interval: {}'.format(main))
+                unc = (main[1] - main[0]) / 2
+                main = (main[0] + main[1]) / 2
         if not hasattr(unc, '__iter__'):
             unc = [unc, unc]
-        center = np.nan if any(np.isinf(unc)) else center
+        main = np.nan if any(np.isinf(unc)) else main
         unc = np.nan_to_num(unc, nan=0.) if any(np.isnan(unc)) else unc
         unc = list(unc)
         unc[0] = abs(unc[0])
-        if not np.isinf(center):
-            unc[0] = min(center - domain[0], unc[0])
-            unc[1] = min(domain[1] - center, unc[1])
+        if not np.isinf(main):
+            unc[0] = min(main - domain[0], unc[0])
+            unc[1] = min(domain[1] - main, unc[1])
         if not (is_lolim or is_uplim or is_range) and unc[1] < 0:
             unc_text = ('Superior uncertainty' if hasattr(unc_or, '__iter__')
                         else 'Uncertainty')
             raise Exception('{} cannot be negative.'.format(unc_text))
-        if (not np.isnan(center) and unc != [0,0]
-                and not domain[0] <= center <= domain[1]):
-            raise Exception('Invalid domain {} for center in {}.'
-                            .format(domain, center))
-        len_sample = int(len_sample)
-        self.center = center
+        if (not np.isnan(main) and unc != [0,0]
+                and not domain[0] <= main <= domain[1]):
+            raise Exception('Invalid domain {} for main in {}.'
+                            .format(domain, main))
+        self.main = main
         self.unc = unc
         self.is_lolim = is_lolim
         self.is_uplim = is_uplim
-        self.num_sf = num_sf
-        self.min_exp = min_exp
-        self.domain = domain
-        self.len_sample = len_sample
-        self.allow_log_scale = allow_log_scale
         self.is_range = is_range
-        self.lim_for_extra_sf = \
-            defaultparams['limit for extra significant figure']
+        self.domain = domain
+        self.num_sf = defaultparams['number of significant figures']
+        self.min_exp = defaultparams['minimum exponent for scientific notation']
             
     def is_lim(self):
         """Upper/lower limit"""
@@ -446,16 +434,28 @@ class RichValue():
         isinterv = self.is_range or self.is_lim()
         return isinterv
         
+    def unc_eb(self):
+        """Uncertainties of the rich value with shape (2,1)"""
+        unceb = [[self.unc[0]], [self.unc[1]]]
+        return unceb    
+    
     def rel_unc(self):
         """Relative uncertainties of the rich value"""
-        m, s = self.center, self.unc
+        m, s = self.main, self.unc
         with np.errstate(all='ignore'):
             runc = list(np.array(s) / abs(m)) if m != 0 else [np.inf, np.inf]
         return runc
+    
+    def signal_noise(self):
+        """Signal-to-noise ratios (S/N)"""
+        m, s = self.main, self.unc
+        with np.errstate(all='ignore'):
+            s_n = list(np.nan_to_num(abs(m) / np.array(s), nan=0))
+        return s_n
         
     def ampl(self):
         """Amplitudes of the rich value"""
-        m, b = self.center, self.domain
+        m, b = self.main, self.domain
         a = [m - b[0], b[1] - m]
         return a
         
@@ -467,23 +467,25 @@ class RichValue():
                    a[1]/s[1] if abs(s[1]) != 0 else np.inf]
         return a_s
     
-    def unc_eb(self):
-        """Uncertainties of the rich value with shape (2,1)"""
-        unceb = [[self.unc[0]], [self.unc[1]]]
-        return unceb
+    def prop_factor(self):
+        """Minimum of the signals-to-noise and the relative amplitudes."""
+        s_n = self.signal_noise()
+        a_s = self.rel_ampl()
+        pf = np.min([s_n, a_s])
+        return pf
     
     def interval(self, sigmas=4.):
         """Interval of possible values of the rich value."""
         if not self.is_interv():
-            interv = [max(self.domain[0], self.center - sigmas*self.unc[0]),
-                      min(self.domain[1], self.center + sigmas*self.unc[1])]
+            interv = [max(self.domain[0], self.main - sigmas*self.unc[0]),
+                      min(self.domain[1], self.main + sigmas*self.unc[1])]
         else:
             if self.is_uplim and not self.is_lolim:
-                interv = [self.domain[0], self.center]
+                interv = [self.domain[0], self.main]
             elif self.is_lolim and not self.is_uplim:
-                interv = [self.center, self.domain[1]]
+                interv = [self.main, self.domain[1]]
             else:
-                interv = [self.center - self.unc[0], self.center + self.unc[1]]
+                interv = [self.main - self.unc[0], self.main + self.unc[1]]
         return interv
     
     def check_limit(self, sigmas=3.):
@@ -492,16 +494,16 @@ class RichValue():
         if not self.is_lim():
             if a_s[0] <= 1:
                 self.is_uplim = True
-                sigmas = min(sigmas, (self.domain[1]-self.center)/self.unc[1])
+                sigmas = min(sigmas, (self.domain[1]-self.main)/self.unc[1])
                 sigmas -= 1e-20
-                self.center = self.center + sigmas*self.unc[1]
+                self.main = self.main + sigmas*self.unc[1]
             if a_s[1] <= 1:
                 self.is_lolim = True
-                sigmas = min(sigmas, (self.center-self.domain[0])/self.unc[0])
+                sigmas = min(sigmas, (self.main-self.domain[0])/self.unc[0])
                 sigmas -= 1e-20
-                self.center = self.center - sigmas*self.unc[1]
+                self.main = self.main - sigmas*self.unc[1]
             if self.is_lolim and self.is_uplim:
-                self.center = np.nan
+                self.main = np.nan
                 self.unc = [np.inf, np.inf]
   
     def check_interval(self, sigmas=3.):
@@ -513,31 +515,28 @@ class RichValue():
                 x1, x2 = self.interval()
                 if x1 == self.domain[0] and x2 != self.domain[1]:
                     self.is_uplim = True
-                    self.center += sigmas * self.unc[1]
+                    self.main += sigmas * self.unc[1]
                 elif x2 == self.domain[1] and x1 != self.domain[0]:
                     self.is_lolim = True
-                    self.center -= sigmas * self.unc[0]
+                    self.main -= sigmas * self.unc[0]
                 else:
                     self.is_range = True
   
     def set_lims_factor(self, c=4.):
         """Set uncertainties of limits with respect to cetral values."""
         if self.is_lolim or self.is_uplim:
-            self.unc = [self.center / c, self.center / c]
+            self.unc = [self.main / c, self.main / c]
         
     def _format_as_rich_value(self):
-        lim_log_scale = defaultparams['minimum relative uncertainty range '
-                                      + 'to use logarithmic scale']
-        center = copy.copy(self.center)
+        main = copy.copy(self.main)
         unc = copy.copy(self.unc)
         is_lolim = self.is_lolim
         is_uplim = self.is_uplim
         domain = self.domain
         is_range = self.is_range
-        allow_log_scale = self.allow_log_scale
         min_exp = self.min_exp
-        lim_for_extra_sf = self.lim_for_extra_sf
-        x = copy.copy(center)
+        extra_sf_lim = defaultparams['limit for extra significant figure']
+        x = copy.copy(main)
         dx = copy.copy(unc)
         n = copy.copy(self.num_sf)
         use_exp = True
@@ -545,45 +544,32 @@ class RichValue():
              and abs(np.floor(log10(abs(float(x))))) < min_exp)
              or (float(x) <= float(max(dx))
                  and float('{:e}'.format(max(dx))
-                           .split('e')[0]) > lim_for_extra_sf
+                           .split('e')[0]) > extra_sf_lim
                  and any(abs(np.floor(log10(abs(np.array(dx)))))
                          < min_exp))
              or (dx == [0,0] and abs(np.floor(log10(abs(x)))) < min_exp)
              or (self.is_lim() and abs(np.floor(log10(abs(float(x))))) < min_exp)
              or np.isinf(min_exp)):
             use_exp = False
-        x1 = center - unc[0]
-        x2 = center + unc[1]
+        x1 = main - unc[0]
+        x2 = main + unc[1]
         if not np.isnan(domain[0]):
             x1 = max(domain[0], x1)
         if not np.isnan(domain[1]):
             x2 = min(domain[1], x2)
         with np.errstate(all='ignore'):
-            new_unc = [center - x1, x2 - center]
-        if ((len(round_sf(new_unc[0])) > len(round_sf(unc[0]))
-                 or len(round_sf(new_unc[1])) > len(round_sf(unc[0])))
-                and not allow_log_scale):
+            new_unc = [main - x1, x2 - main]
+        if (len(round_sf(new_unc[0])) > len(round_sf(unc[0]))
+                or len(round_sf(new_unc[1])) > len(round_sf(unc[0]))):
             n -= 1
         n = max(1, n)
         unc = new_unc
-        if (allow_log_scale and not is_range
-                and sum(unc) > lim_log_scale * abs(center)):
-            log_scale = True
-        else:
-            log_scale = False
-        if log_scale:
-            sign = '' if center >= 0 else '-'
-            unc = [np.log10(abs(center)) - np.log10(abs(center-unc[0])),
-                   np.log10(abs(center+unc[1])) - np.log10(abs(center))]
-            center = np.log10(abs(center))
-            use_exp = False
-            min_exp = 0
-        if not is_range and not np.isnan(center):
-            x = center
+        if not is_range and not np.isnan(main):
+            x = main
             dx1, dx2 = unc
             if not self.is_lim():
                 y, (dy1, dy2) = round_sf_uncs(x, [dx1, dx2], n, min_exp,
-                                              lim_for_extra_sf)
+                                              extra_sf_lim)
                 y, dy1, dy2 = str(y), str(dy1), str(dy2)
                 if 'e' in y:
                     y, a = y.split('e')
@@ -604,7 +590,7 @@ class RichValue():
                 if not use_exp:
                     text = text.replace(' e0','')
             else:
-                y = round_sf(x, n, min_exp, lim_for_extra_sf)
+                y = round_sf(x, n, min_exp, extra_sf_lim)
                 if 'e' in y:
                     y, a = y.split('e')
                     a = int(a)
@@ -619,61 +605,49 @@ class RichValue():
                 text = text.replace('e-0', 'e-')
                 a = int(text.split('e')[1])
                 if abs(a) < min_exp:
-                    text = str(RichValue(x, dx, is_lolim, is_uplim, n, np.inf,
-                                     domain, self.len_sample, allow_log_scale))
+                    z = RichValue(x, dx, is_lolim, is_uplim, is_range, domain)
+                    z.num_sf = n
+                    z.min_exp = np.inf
+                    text = str(z)
             else:
                 text = text.replace(' e0','')
-        elif not is_range and np.isnan(center):
+        elif not is_range and np.isnan(main):
             text = 'nan'
         else:
-            x1 = RichValue(center - unc[0], min_exp=min_exp, domain=domain)
-            x2 = RichValue(center + unc[1], min_exp=min_exp, domain=domain)
+            x1 = RichValue(main - unc[0], domain=domain)
+            x2 = RichValue(main + unc[1], domain=domain)
+            x1.min_exp = min_exp
+            x2.min_exp = min_exp
             text = '{} -- {}'.format(x1, x2)
-        if log_scale:
-            text = '{}10^ ({})'.format(sign, text)
         return text
     
-    def _format_as_latex_value(self, mult_symbol='\\cdot'):
-        lim_log_scale = defaultparams['minimum relative uncertainty range '
-                                      + 'to use logarithmic scale']
-        center = copy.copy(self.center)
+    def _format_as_latex_value(self, dollars=True, mult_symbol='\\cdot'):
+        main = copy.copy(self.main)
         unc = copy.copy(self.unc)
         domain = self.domain
         is_lolim = self.is_lolim
         is_uplim = self.is_uplim
-        allow_log_scale = self.allow_log_scale
         min_exp = self.min_exp
-        lim_for_extra_sf = self.lim_for_extra_sf
         is_range = self.is_range
+        extra_sf_lim = defaultparams['limit for extra significant figure']
         use_exp = True
-        if (allow_log_scale and not is_range
-                and sum(unc) > lim_log_scale *abs(center)):
-            log_scale = True
-        else:
-            log_scale = False
-        if log_scale:
-            unc = [np.log10(center) - np.log10(center-unc[0]),
-                   np.log10(center+unc[1]) - np.log10(center)]
-            center = np.log10(center)
-            use_exp = False
-            min_exp = 0
-        x = copy.copy(center)
+        x = copy.copy(main)
         dx = copy.copy(unc)
         n = copy.copy(self.num_sf)
         if ((float(x) > float(max(dx))
              and abs(np.floor(log10(abs(float(x))))) < min_exp)
              or (float(x) <= float(max(dx))
                  and float('{:e}'.format(max(dx))
-                           .split('e')[0]) > lim_for_extra_sf
+                           .split('e')[0]) > extra_sf_lim
                  and any(abs(np.floor(log10(abs(np.array(dx))))) < min_exp))
              or (dx == [0,0] and abs(np.floor(log10(abs(x)))) < min_exp)
              or (self.is_lim() and abs(np.floor(log10(abs(float(x))))) < min_exp)
              or np.isinf(min_exp)):
             use_exp = False
-        y, dy = round_sf_uncs(x, dx, n, min_exp, lim_for_extra_sf)
+        y, dy = round_sf_uncs(x, dx, n, min_exp, extra_sf_lim)
         text = ''
         non_numerics = ['nan', 'NaN', 'None', 'inf', '-inf']
-        is_numeric = False if str(center) in non_numerics else True
+        is_numeric = False if str(main) in non_numerics else True
         if is_numeric:
             if not is_range:
                 _, unc_r = round_sf_uncs(x, dx, n)
@@ -682,28 +656,28 @@ class RichValue():
                 if not (is_lolim or is_uplim):
                     if unc_r[0] == unc_r[1]:
                         if unc_r[0] == unc_r[1] == 0:
-                            y = round_sf(x, n+1, np.inf, lim_for_extra_sf)
+                            y = round_sf(x, n+1, np.inf, extra_sf_lim)
                             text = '${}$'.format(y)
                         else:
                             y, dy = round_sf_unc(x, dx[0], n, min_exp,
-                                                 lim_for_extra_sf)
+                                                 extra_sf_lim)
                             text = '${} \pm {}$'.format(y, dy)
                     else:
                         y, dy = round_sf_uncs(x, dx, n, min_exp,
-                                              lim_for_extra_sf)
+                                              extra_sf_lim)
                         text = '$'+y + '_{-'+dy[0]+'}^{+'+dy[1]+'}$'
                 else:
                     if is_lolim:
                         sign = '>'
                     elif is_uplim:
                         sign = '<'
-                    y = round_sf(x, n, min_exp, lim_for_extra_sf)
+                    y = round_sf(x, n, min_exp, extra_sf_lim)
                     text = '${} {}$'.format(sign, y)
             elif not is_range and use_exp:
                 if not (is_lolim or is_uplim):
                     if unc_r[0] == unc_r[1]:
                         if unc_r[0] == unc_r[1] == 0:
-                            y = round_sf(x, n+1, min_exp, lim_for_extra_sf)
+                            y = round_sf(x, n+1, min_exp, extra_sf_lim)
                             y, a = y.split('e')
                             a = str(int(a))
                             text = ('${} {}'.format(y, mult_symbol)
@@ -711,7 +685,7 @@ class RichValue():
                         else:
                             y, dy = \
                                 round_sf_unc(x, dx[0], n, min_exp,
-                                             lim_for_extra_sf)
+                                             extra_sf_lim)
                             if 'e' in y:
                                 y, a = y.split('e')
                                 dy, a = dy.split('e')
@@ -722,7 +696,7 @@ class RichValue():
                                      + mult_symbol + '10^{'+a+'}$')
                     else:
                         y, dy = round_sf_uncs(x, [dx[0], dx[1]], n, min_exp,
-                                              lim_for_extra_sf)
+                                              extra_sf_lim)
                         if 'e' in y:
                             y, a = y.split('e')
                             dy1, a = dy[0].split('e')
@@ -739,7 +713,7 @@ class RichValue():
                     elif is_uplim:
                         symbol = '<'
                     y = round_sf(x, n, min_exp=0,
-                                 lim_for_extra_sf=lim_for_extra_sf)
+                                 extra_sf_lim=extra_sf_lim)
                     y, a = y.split('e')
                     a = str(int(a))
                     text = ('${} {} {}'.format(symbol, y, mult_symbol)
@@ -748,106 +722,62 @@ class RichValue():
                     text = text.replace('e-0', 'e-').replace('e+','e')
                     a = int(text.split('10^{')[1].split('}')[0])
                     if abs(a) < min_exp:
-                        text = RichValue(x, dx, is_lolim, is_uplim, n, np.inf,
-                                         domain, self.len_sample,
-                                         allow_log_scale).latex()
+                        y = RichValue(x, dx, is_lolim, is_uplim,
+                                      is_range, domain)
+                        y.num_sf = n
+                        y.min_exp = np.inf
+                        text = y.latex(dollars, mult_symbol)
             else:
-                x1 = RichValue(center - unc[0], min_exp=min_exp, domain=domain)
-                x2 = RichValue(center + unc[1], min_exp=min_exp, domain=domain)
-                text = '{} -- {}'.format(x1.latex(), x2.latex())
-            if log_scale:
-                text = '$10^{' + text + '}$'
+                x1 = RichValue(main - unc[0], domain=domain)
+                x2 = RichValue(main + unc[1], domain=domain)
+                x1.min_exp = min_exp
+                x2.min_exp = min_exp
+                text = '{} -- {}'.format(x1.latex(dollars, mult_symbol),
+                                         x2.latex(dollars, mult_symbol))
         else:
-            text = (str(center).replace('NaN','nan').replace('nan','...')
+            text = (str(main).replace('NaN','nan').replace('nan','...')
                     .replace('inf','$\infty$'))
+        if not dollars:
+            text = text.replace('$','')
         return text
         
     def __repr__(self):
         return self._format_as_rich_value()
+    
     def __str__(self):
         return self._format_as_rich_value()
    
-    def latex(self, mult_symbol=defaultparams['multiplication symbol for '
-                                              +'scientific notation in LaTeX']):
+    def latex(self, dollars=True, mult_symbol=defaultparams['multiplication '
+                                 + 'symbol for scientific notation in LaTeX']):
         """Display in LaTeX format"""
-        return self._format_as_latex_value(mult_symbol) 
+        return self._format_as_latex_value(dollars, mult_symbol) 
    
     def __neg__(self):
-        center = copy.copy(self.center)
+        main = copy.copy(self.main)
         unc = copy.copy(self.unc)
         domain = copy.copy(self.domain)
         if not self.is_interv():
-            x = -center
+            x = -main
         else:
             x1, x2 = self.interval()
             x = [-x2, -x1]
         dx = unc
         domain = [-domain[0], -domain[1]]
         domain = [min(domain), max(domain)]
-        new_rich_value = \
-            RichValue(x, dx, False, False, self.num_sf, self.min_exp,  domain,
-                      self.len_sample, self.allow_log_scale)
-        return new_rich_value
-    
-    def inv(self):
-        """Inverse of the rich value"""
-        sigmas = defaultparams['minimum relative distance to the domain edges ' \
-                               + 'to apply analytic uncertainty propagation']
-        center = copy.copy(self.center)
-        unc = copy.copy(self.unc)
-        domain = copy.copy(self.domain)
-        is_interv = self.is_interv()
-        is_lolim = self.is_lolim
-        is_uplim = self.is_uplim
-        s = np.sign(np.mean(domain))
-        domain1 = 1/domain[1] if domain[1] != 0 else s*np.inf
-        domain2 = 1/domain[0] if domain[0] != 0 else s*np.inf
-        domain = [domain1, domain2]
-        if not is_interv and max(unc) < 1/sigmas*center:
-            x = 1 / center
-            dx = np.array(unc) / center * x
-            new_rich_value = \
-                RichValue(x, dx, is_lolim, is_uplim, self.num_sf, self.min_exp,
-                          domain, self.len_sample, self.allow_log_scale)
-        elif is_interv:
-            a, b = self.interval()
-            if a < 0 and b > 0:
-                x = np.nan
-                dx = np.inf
-                domain = [-np.inf, np.inf]
-            else:
-                s = np.sign(np.mean([a,b]))
-                x1 = 1/b if b != 0 else s*np.inf
-                x2 = 1/a if a != 0 else s*np.inf
-                x = [x1, x2]
-                dx = 0
-                if domain[0] < 0 and domain[1] > 0:
-                    domain = [-np.inf, np.inf]
-                
-            new_rich_value = RichValue(x, dx, None, None, self.num_sf,
-                                       self.min_exp, domain, self.len_sample,
-                                       self.allow_log_scale)
-        else:
-            new_rich_value = \
-                function_with_rich_values(lambda x: 1/x, self,
-                                          use_sigma_combs=True)
+        new_rich_value = RichValue(x, dx, domain=domain)
         return new_rich_value
     
     def __add__(self, other):
-        other_ = (other.center if 'RichValue' in str(type(other))
-                  and other.unc==[0,0] and other.domain==[-np.inf,np.inf]
-                  else other)
+        other_ = (other.main if 'RichValue' in str(type(other))
+                  and other.unc==[0,0] else other)
         if type(other_) is RichValue:
             new_rich_value = add_two_rich_values(self, other_)
         else:
             if other_ != 0:
-                x = self.center + other_
+                x = self.main + other_
                 dx = copy.copy(self.unc)
-                new_rich_value = \
-                    RichValue(x, dx, self.is_lolim, self.is_uplim,
-                              self.num_sf, self.min_exp, self.domain,
-                              self.len_sample, self.allow_log_scale)
-                new_rich_value.is_range = self.is_range
+                new_rich_value = RichValue(x, dx, self.is_lolim, self.is_uplim,
+                                           self.is_range, self.domain)
             else:
                 new_rich_value = RichValue(0, domain=self.domain)
         return new_rich_value
@@ -862,23 +792,21 @@ class RichValue():
         return -(self - other)
     
     def __mul__(self, other):
-        other_ = (other.center if 'RichValue' in str(type(other))
-                  and other.unc==[0,0] and other.domain==[-np.inf,np.inf]
-                  else other)
+        other_ = (other.main if 'RichValue' in str(type(other))
+                  and other.unc==[0,0] else other)
         if type(other_) is RichValue:
             new_rich_value = multiply_two_rich_values(self, other_)
         else:
             if other_ != 0:
                 with np.errstate(all='ignore'):
-                    x = self.center * other_
+                    x = self.main * other_
                     dx = np.array(self.unc) * other_
                     domain = np.array(self.domain) * other_
                     domain = [min(domain), max(domain)]
-                new_rich_value = \
-                    RichValue(x, dx, self.is_lolim, self.is_uplim,
-                              self.num_sf, self.min_exp, domain,
-                              self.len_sample, self.allow_log_scale)
-                new_rich_value.is_range = self.is_range
+                new_rich_value = RichValue(x, dx, self.is_lolim, self.is_uplim,
+                                           self.is_range, domain)
+                new_rich_value.num_sf = self.num_sf
+                new_rich_value.min_exp = self.min_exp
             else:
                 new_rich_value = RichValue(0, domain=self.domain)
         return new_rich_value
@@ -887,64 +815,58 @@ class RichValue():
         return self * other
     
     def __truediv__(self, other):
-        other_ = (other.center if 'RichValue' in str(type(other))
-                  and other.unc==[0,0] and other.domain==[-np.inf,np.inf]
-                  else other)
+        other_ = (other.main if 'RichValue' in str(type(other))
+                  and other.unc==[0,0] else other)
         if type(other_) is RichValue:
             new_rich_value = divide_two_rich_values(self, other_)
         else:
             if other_ != 0:
                 with np.errstate(all='ignore'):
-                    x = self.center / other_
+                    x = self.main / other_
                     dx = np.array(self.unc) / other_
                     domain = np.array(self.domain) / other_
                     domain = [min(domain), max(domain)]
-                new_rich_value = \
-                    RichValue(x, dx, self.is_lolim, self.is_uplim,
-                              self.num_sf, self.min_exp, domain,
-                              self.len_sample, self.allow_log_scale)
-                new_rich_value.is_range = self.is_range
+                new_rich_value = RichValue(x, dx, self.is_lolim, self.is_uplim,
+                                           self.is_range, domain)
+                new_rich_value.num_sf = self.num_sf
+                new_rich_value.min_exp = self.min_exp
             else:
                 new_rich_value = RichValue(np.nan, domain=self.domain)
         return new_rich_value
 
     def __rtruediv__(self, other):
-        other_ = (other.center if 'RichValue' in str(type(other))
-                  and other.unc==[0,0] and other.domain==[-np.inf,np.inf]
-                  else other)
+        other_ = (other.main if 'RichValue' in str(type(other))
+                  and other.unc==[0,0] else other)
         if type(other_) is RichValue:
             new_rich_value = divide_two_rich_values(other_, self)
         else:
             if other_ != 0:
                 with np.errstate(all='ignore'):
-                    x = other_ / self.center
-                    dx = x * np.array(self.unc) / self.center
+                    x = other_ / self.main
+                    dx = x * np.array(self.unc) / self.main
                     domain = other_ / np.array(self.domain)
                     domain = [min(domain), max(domain)]
-                new_rich_value = \
-                    RichValue(x, dx, self.is_lolim, self.is_uplim,
-                              self.num_sf, self.min_exp, domain,
-                              self.len_sample, self.allow_log_scale)
-                new_rich_value.is_range = self.is_range
+                new_rich_value = RichValue(x, dx, self.is_lolim, self.is_uplim,
+                                           self.is_range, domain)
+                new_rich_value.num_sf = self.num_sf
+                new_rich_value.min_exp = self.min_exp
             else:
                 new_rich_value = RichValue(0, domain=self.domain)
         return new_rich_value
     
     def __pow__(self, other):
-        sigmas = defaultparams['minimum relative distance to the domain edges ' \
-                               + 'to apply analytic uncertainty propagation']
-        center = copy.copy(self.center)
+        sigmas = defaultparams['limit factor to use approximate '
+                               + 'uncertainty propagation']
+        main = copy.copy(self.main)
         unc = copy.copy(self.unc)
         domain = copy.copy(self.domain)
-        if ((domain[0] >= 0
-             and (type(other) is RichValue
-                  or max(unc) > 1/sigmas * abs(center)))
-                    or (domain[0] < 0 and type(other) is not RichValue)
-                    and int(other) == other
-                    and max(unc) > 1/sigmas * abs(center)):
+        if ((domain[0] >= 0 and (type(other) is RichValue
+                                 or self.prop_factor() < sigmas))
+            or (domain[0] < 0 and type(other) is not RichValue)
+                and int(other) == other and self.prop_factor() < sigmas):
             other_ = (other if type(other) is RichValue
                       else RichValue(other, num_sf=self.num_sf))
-            if center != 0:
+            if main != 0:
                 if type(other) is not RichValue and other%2 == 0:
                     domain = [0, np.inf]
                 else:
@@ -954,10 +876,9 @@ class RichValue():
                                               domain=domain)
             else:
                 new_rich_value = RichValue(0, num_sf=self.num_sf)
-        elif (type(other) is not RichValue
-              and max(unc) <= 1/sigmas * abs(center)):
-            x = center ** other
-            dx = abs(x * other * np.array(unc) / center)
+        elif (type(other) is not RichValue and self.prop_factor() > sigmas):
+            x = main ** other
+            dx = abs(x * other * np.array(unc) / main)
             if domain != [-np.inf, np.inf]:
                 if domain[0] != 0 or (domain[0] == 0 and other>0):
                     x1 = domain[0] ** other
@@ -972,11 +893,10 @@ class RichValue():
             else:
                 domain = [-np.inf, np.inf]
             new_rich_value = RichValue(x, dx, self.is_lolim, self.is_uplim,
-                                       self.num_sf, self.min_exp, domain,
-                                       self.len_sample, self.allow_log_scale)
+                                       domain)
         else:
             if (type(other) is RichValue and other.domain[0] < 0
-                    and not np.isinf(other.center)):
+                    and not np.isinf(other.main)):
                 print('Warning: Domain of exponent should be positive.')
             new_rich_value = RichValue(np.nan)
         return new_rich_value
@@ -988,52 +908,49 @@ class RichValue():
             domain = [-np.inf, 0]
         else:
             domain = [-np.inf, np.inf]
-        other_ = RichValue(other, num_sf=self.num_sf, domain=domain)
+        other_ = RichValue(other, domain=domain, num_sf=self.num_sf)
         new_rich_value = other_ ** self
-        new_rich_value.allow_log_scale = True
         return new_rich_value
     
     def pdf(self, x):
         """Probability Density Function corresponding to the rich value"""
-        center = copy.copy(self.center)
+        main = copy.copy(self.main)
         unc = copy.copy(self.unc)
         domain = copy.copy(self.domain)
         x = np.array(x)
         y = np.zeros(len(x))
         if unc == [0, 0] and not self.is_interv():    
-            ind = np.argmin(abs(x - center))
+            ind = np.argmin(abs(x - main))
             if hasattr(ind, '__iter__'):
                 ind = ind[0]
             y[ind] = 1
         else:
             if not self.is_interv():
-                y = general_pdf(x, center, unc, domain, norm=True)
+                y = general_pdf(x, main, unc, domain, norm=True)
             elif self.is_lolim and not self.is_uplim:
-                y[x > center] = 0.01
+                y[x > main] = 0.01
             elif self.is_uplim and not self.is_lolim:
-                y[x < center] = 0.01
+                y[x < main] = 0.01
             elif self.is_range:
-                x1, x2 = center - unc, center + unc
+                x1, x2 = main - unc, main + unc
                 y[(x > x1) & (x < x2)] = 1 / (x2 - x1)
         return y
     
-    def sample(self, N=None):
+    def sample(self, N=defaultparams['size of samples']):
         """Sample of the distribution corresponding to the rich value"""
-        center = copy.copy(self.center)
+        main = copy.copy(self.main)
         unc = copy.copy(self.unc)
         domain = copy.copy(self.domain)
-        if N is None:
-            N = self.len_sample
         N = int(N)
         is_finite_interv = (self.is_range
                             or self.is_uplim and np.isfinite(domain[0])
                             or self.is_lolim and np.isfinite(domain[1]))
         if list(unc) == [0, 0] and not self.is_interv():
-            x = center * np.ones(N)
+            x = main * np.ones(N)
         else:
             if not is_finite_interv and list(self.unc) != [np.inf, np.inf]:
                 if not self.is_lim():
-                    x = general_distribution(center, unc, domain, N)
+                    x = general_distribution(main, unc, domain, N)
                 else:
                     x1, x2 = self.interval()    
                     x = loguniform_distribution(x1, x2, N)
@@ -1053,7 +970,7 @@ class RichValue():
         if len(x) != N:
             np.random.shuffle(x)
             x = x[:N-1]
-            x = np.append(x, center)
+            x = np.append(x, main)
         return x
     
     def function(self, function, **kwargs):
@@ -1066,103 +983,62 @@ class RichArray(np.ndarray):
     A class to store several values with uncertainties or with upper/lower limits.
     """
     
-    def __new__(cls, centers, uncs=None,
-                are_lolims=None, are_uplims=None, are_ranges=None,
-            num_sf=defaultparams['number of significant figures'],
-            min_exp=defaultparams['minimum exponent for scientific notation'],
-            domain=defaultparams['domain'],
-            len_sample=defaultparams['size of samples'],
-            allow_log_scale=defaultparams['allow logarithmic scale']):
+    def __new__(cls, mains, uncs=None, are_lolims=None, are_uplims=None,
+                are_ranges=None, domain=None):
         """
         Parameters
         ----------
-        centers : list / array (float)
-            Array of central values.
+        mains : list / array (float)
+            Array of main values.
         uncs : list / array (float), optional
             Array of lower and upper uncertainties associated with the central
             values. The default is None.
         are_lolims : list / array (bool), optional
-            Array of logical variables that indicate if each central value is
+            Array of logical variables that indicate if each mian value is
             actually a lower limit. The default is None.
         are_uplims : list / array (bool), optional
-            Array of logical variables that indicate if each central value is
+            Array of logical variables that indicate if each main value is
             actually an upper limit. The default is None.
-        num_sf : int, optional
-            Number of significant figures to use for the uncertainties.
-            The default is 1.
-        min_exp : int, optional
-            If use_exp is True, minimum decimal exponent, in absolute value, to
-            apply scientific notation. The default is 4.
+        are_ranges : list / array (bool), optional
+            Array of logical variables that indicate if each rich value is
+            actually a constant range of values defined by the main value and
+            the uncertainties. The default is None.
         domain : list (float), optional
             The domain of the rich value, that is, the minimum and maximum
             values that it can take. The default is [-np.inf, np.inf].
-        len_sample : int, optional
-            In case a function has to be applied to this rich value and there
-            is no analytic formula for propagating the errors, it will be
-            calculated from  distributions with this number of samples.
-            The default is 10000
-        allow_log_scale : bool, optional
-            If True, the values of the rich array will be displayed as an 
-            exponent in decimal base. The default is False.
         """
-        centers = np.array(centers)
+        mains = np.array(mains)
         if uncs is None:
-            uncs = np.zeros((2, *centers.shape))
+            uncs = np.zeros((2, *mains.shape))
         if are_lolims is None:
-            are_lolims = np.zeros(centers.shape, bool)
+            are_lolims = np.zeros(mains.shape, bool)
         if are_uplims is None:
-            are_uplims = np.zeros(centers.shape, bool)
+            are_uplims = np.zeros(mains.shape, bool)
         if are_ranges is None:
-            are_ranges = np.zeros(centers.shape, bool)
+            are_ranges = np.zeros(mains.shape, bool)
         uncs = np.array(uncs)
         are_lolims = np.array(are_lolims)
         are_uplims = np.array(are_uplims)
         are_ranges = np.array(are_ranges)
-        array = np.empty(centers.size, object)
-        if uncs.shape == (*centers.shape, 2):
+        array = np.empty(mains.size, object)
+        if uncs.shape == (*mains.shape, 2):
             uncs = uncs.transpose()
-        elif uncs.shape == centers.shape:
+        elif uncs.shape == mains.shape:
             uncs = [[uncs]]*2
-            uncs = np.array(uncs).reshape((2, *centers.shape))
-        for i in range(centers.size):
-            center = centers.flatten()[i]
+            uncs = np.array(uncs).reshape((2, *mains.shape))
+        for i in range(mains.size):
+            main = mains.flatten()[i]
             unc_flat = uncs.flatten()
             unc = [unc_flat[i], unc_flat[i+len(unc_flat)//2]]
             is_lolim = are_lolims.flatten()[i]
             is_uplim = are_uplims.flatten()[i]
             is_range = are_ranges.flatten()[i]
-            center = [center - unc[0], center + unc[1]] if is_range else center
-            array[i] = RichValue(center, unc, is_lolim, is_uplim, num_sf,
-                                 min_exp, domain, len_sample, allow_log_scale)
-        array = array.reshape(centers.shape)
+            main = [main - unc[0], main + unc[1]] if is_range else main
+            array[i] = RichValue(main, unc, is_lolim, is_uplim,
+                                 is_range, domain)
+        array = array.reshape(mains.shape)
         array = array.view(cls)
-        array.num_sf = num_sf
-        array.min_exp = min_exp
-        array.domain = domain
-        array.len_sample = len_sample
-        array.allow_log_scale = allow_log_scale
         return array
-
-    def __copy__(self):
-        cls = self.__class__
-        new_array = \
-            cls.__new__(cls, self.centers(), self.uncs(), self.are_lolims(),
-                        self.are_lolims(), self.are_ranges(), self.num_sf,
-                        self.min_exp, self.domain, self.allow_log_scale)
-        new_array.__dict__.update(self.__dict__)
-        return new_array
-    
-    def __deepcopy__(self, memo):
-        cls = self.__class__
-        new_array = \
-            cls.__new__(cls, self.centers(), self.uncs(), self.are_lolims(),
-                        self.are_lolims(), self.are_ranges(), self.num_sf,
-                        self.min_exp, self.domain, self.allow_log_scale)
-        new_array.__dict__.update(self.__dict__)
-        memo[id(self)] = new_array
-        for k, v in self.__dict__.items():
-            setattr(new_array, k, copy.deepcopy(v, memo))
-        return new_array
     
     def __getitem__(self, index):
         result = super().__getitem__(index)
@@ -1180,10 +1056,10 @@ class RichArray(np.ndarray):
     def ravel(self, order='C'):
         return rich_array(np.array(self).ravel(order))
     
-    def centers(self):
+    def mains(self):
         new_array = np.empty(0, float)
         for x in self.flat:
-            new_array = np.append(new_array, x.center)
+            new_array = np.append(new_array, x.main)
         new_array = new_array.reshape(self.shape)
         return new_array
 
@@ -1215,6 +1091,13 @@ class RichArray(np.ndarray):
         new_array = new_array.reshape(self.shape)
         return new_array 
     
+    def domains(self):
+        new_array = np.empty(0, bool)
+        for x in self.flat:
+            new_array = np.append(new_array, x.domain)
+        new_array = new_array.reshape([*self.shape,2])
+        return new_array 
+    
     def are_lims(self):
         new_array = np.empty(0, bool)
         for x in self.flat:
@@ -1236,6 +1119,13 @@ class RichArray(np.ndarray):
         new_array = new_array.reshape([*self.shape,2]).transpose()
         return new_array
     
+    def signals_noises(self):
+        new_array = np.empty(0, float)
+        for x in self.flat:
+            new_array = np.append(new_array, x.signal_noise())
+        new_array = new_array.reshape([*self.shape,2]).transpose()
+        return new_array
+    
     def ampls(self):
         new_array = np.empty(0, float)
         for x in self.flat:
@@ -1250,19 +1140,40 @@ class RichArray(np.ndarray):
         new_array = new_array.reshape([*self.shape,2]).transpose()
         return new_array
     
+    def prop_factors(self):
+        new_array = np.empty(0, float)
+        for x in self.flat:
+            new_array = np.append(new_array, x.prop_factor)
+        new_array = new_array.reshape(self.shape)
+        return new_array
+    
     def intervals(self, sigmas=3.):
         new_array = np.empty(0, float)
         for x in self.flat:
             new_array = np.append(new_array, x.interval(sigmas))
         new_array = new_array.reshape([*self.shape,2]).transpose()
         return new_array
+    
+    def set_params(self, params):
+        """Set the rich value parameters of each entry of the rich array."""
+        new_array = np.empty(0, float)
+        for x in self.flat:
+            if 'domain' in params:
+                x.domain = params['domain']
+            if 'num_sf' in params:
+                x.num_sf = params['num_sf']
+            if 'min_exp' in params:
+                x.min_exp = params['min_exp']
+            new_array = np.append(new_array, x)
+        new_array = new_array.reshape(self.shape)
+        self = new_array
             
-    def latex(self, mult_symbol=defaultparams['multiplication symbol for '
-                                              +'scientific notation in LaTeX']):
+    def latex(self, dollars=True, mult_symbol=defaultparams['multiplication '
+                                  +'symbol for scientific notation in LaTeX']):
         """Display the values of the rich array in LaTeX math mode."""
         new_array = np.empty(0, str)
         for x in self.flat:
-            new_array = np.append(new_array, x.latex(mult_symbol))
+            new_array = np.append(new_array, x.latex(dollars, mult_symbol))
         new_array = new_array.reshape(self.shape)
         return new_array
 
@@ -1289,13 +1200,12 @@ class RichArray(np.ndarray):
         cu = 1 if cu == 0 else cu
         for x in self.flat:
             if x.is_lolim:
-                x.unc = [x.center / cl] * 2
+                x.unc = [x.main / cl] * 2
             elif x.is_uplim:
-                x.unc = [x.center / cu] * 2
+                x.unc = [x.main / cu] * 2
 
-    def sample(self, N=None):
+    def sample(self, N=defaultparams['size of samples']):
         """Obtain a sample of each entry of the array"""
-        N = self.len_sample if N is None else N
         new_array = np.empty(0, float)
         for x in self.flat:
             new_array = np.append(new_array, x.sample(N))
@@ -1348,25 +1258,33 @@ class RichDataFrame(pd.DataFrame):
       
     def get_params(self):
         """Return the rich value parameters of each column of the dataframe."""
-        num_sf, min_exp, domain, len_sample, allow_log_scale = \
-            {}, {}, {}, {}, {}
+        domain, num_sf, min_exp = {}, {}, {}
         for col in self:
             x = self[col][0]
             is_rich_value = True if type(x) is RichValue else False
+            domain[col] = (x.domain if is_rich_value
+                           else defaultparams['domain'])
             num_sf[col] = (x.num_sf if is_rich_value else
                            defaultparams['number of significant figures'])
             min_exp[col] = (x.min_exp if is_rich_value
                             else defaultparams['minimum exponent for '
                                                + 'scientific notation'])
-            domain[col] = (x.domain if is_rich_value
-                           else defaultparams['domain'])
-            len_sample[col] = (x.len_sample if is_rich_value else
-                               defaultparams['size of samples'])
-            allow_log_scale[col] = (x.allow_log_scale if is_rich_value else
-                                    defaultparams['allow logarithmic scale'])
-        params = {'num_sf': num_sf, 'min_exp': min_exp, 'domain': domain,
-                  'len_sample': len_sample, 'allow_log_scale': allow_log_scale}
+        params = {'domain': domain, 'num_sf': num_sf, 'min_exp': min_exp}
         return params
+    
+    def set_params(self, params):
+        """Set the rich value parameters of each column of the dataframe."""
+        for param_name in ['domain', 'num_sf', 'min_exp']:
+            if param_name in params and type(params[param_name]) is not dict:
+                    default_param = params[param_name]
+                    params[param_name] = {}
+                    for col in self:
+                        params[param_name][col] = default_param
+        for i,col in enumerate(params):
+            for param_name in ['domain', 'num_sf', 'min_exp']:
+                if param_name in params and col in params[param_name]:
+                    for j in range(len(col)):
+                        self[col][j].domain = params[param_name]
     
     def create_column(self, function, columns, **kwargs):
         """
@@ -1424,16 +1342,16 @@ class RichDataFrame(pd.DataFrame):
         return new_row
 
     def latex(self, return_df=False, row_sep='\\tabularnewline',
-              mult_symbol=defaultparams['multiplication symbol for '
-                                        + 'scientific notation in LaTeX']):
+              show_dollar=True, mult_symbol=defaultparams['multiplication '
+                                  + 'symbol for scientific notation in LaTeX']):
         """Return the content of the dataframe as a table in LaTeX format."""
-        row_sep = ' ' + row_sep + ' '
+        row_sep = ' ' + row_sep + ' \n'
         new_df = copy.copy(self)
         for col in self:
             for i in range(len(self[col])):
                 entry = self.at[i,col]
                 if 'RichValue' in str(type(entry)):
-                    if not np.isnan(entry.center):
+                    if not np.isnan(entry.main):
                         new_df.at[i,col] = entry.latex(mult_symbol)
                     else:
                         new_df.at[i,col] = '...'
@@ -1508,10 +1426,7 @@ class RichDataFrame(pd.DataFrame):
     def __rpow__(self, other):
         return RichDataFrame(other ** self)
 
-def rich_value(text, num_sf=None, min_exp=defaultparams['minimum exponent for '
-                                                        +'scientific notation'],
-               domain=None, len_sample=defaultparams['size of samples'],
-               allow_log_scale=None):
+def rich_value(text, domain=None):
     """
     Convert the input text to a rich value.
 
@@ -1519,27 +1434,10 @@ def rich_value(text, num_sf=None, min_exp=defaultparams['minimum exponent for '
     ----------
     text : str
         String representing a rich value.
-    num_sf : int, optional
-        Number of significant figures to use for the uncertainties.
-        The default is the maximum of this variable for the elements of the
-        resulting rich array.
-    min_exp : int, optional
-        If use_exp is True, minimum decimal exponent, in absolute value, to
-        apply scientific notation. The default is 4.
     domain : list (float), optional
         The domain of the rich value, that is, the minimum and maximum
         values that it can take. The default is the union of the domains of all
         the elements of the resulting rich array.
-    len_sample : int, optional
-        In case a function has to be applied to this rich value and there
-        is no analytic formula for propagating the errors, it will be
-        calculated from  distributions with this number of samples.
-        The default is the number of elements of the array times the mean of
-        this variable for all the elements of the resulting rich array.
-    allow_log_scale : bool, optional
-        If True, the values of the rich array will be displayed as an exponent
-        in decimal base. The default is True if this variable is True for any
-        of the elements of the resulting rich array.
 
     Returns
     -------
@@ -1547,35 +1445,11 @@ def rich_value(text, num_sf=None, min_exp=defaultparams['minimum exponent for '
         Resulting rich value.
     """
     
-    lim_for_extra_sf = defaultparams['limit for extra significant figure']
-    num_sf_or = copy.copy(num_sf)
     domain_or = copy.copy(domain)
-    allow_log_scale_or = copy.copy(allow_log_scale)
     
     def parse_as_rich_value(text):
-        """
-        Obtain the properties of the input text as a rich value.
-
-        Parameters
-        ----------
-        text : str
-            Input text representing a rich value.
-
-        Returns
-        -------
-        center : float
-            Central value.
-        unc : list (float)
-            Lower and upper uncertainties.
-        is_lolim :  bool
-            If True, the central value is actually a lower limit.
-        is_uplim : bool
-            If True, the central value is actually an upper limit.
-        num_sf : int
-            Number of significant figures.
-        domain : list (float)
-            Domain of the variable.
-        """
+        """Obtain the properties of the input text as a rich value."""
+        text = str(text)
         if '[' in text and ']' in text:
             x1, x2 = text.split('[')[1].split(']')[0].split(',')
             x1 = float(x1) if x1 != '-inf' else -np.inf
@@ -1640,81 +1514,29 @@ def rich_value(text, num_sf=None, min_exp=defaultparams['minimum exponent for '
                 else:
                     x = np.nan
                     dx1, dx2 = 0, 0
-            if (not (is_lolim or is_uplim)
-                    and not (float(dx1) == float(dx2) == 0)):
-                dx1, dx2 = str(dx1), str(dx2)
-                dx1_ = dx1.split('e')[0]
-                dx2_ = dx2.split('e')[0]
-                for i in reversed(range(len(dx1_))):
-                    dx1_ = dx1_.replace('0.'+'0'*i, '')
-                dx1_ = dx1_.replace('.','')
-                for i in reversed(range(len(dx2_))):
-                    dx2_ = dx2_.replace('0.'+'0'*i, '')
-                dx2_ = dx2_.replace('.','')
-                n1 = len(dx1_)
-                base1 = float('{:e}'.format(float(dx1)).split('e')[0])
-                if base1 < lim_for_extra_sf:
-                    n1 -= 1
-                n2 = len(dx2_)
-                base2 = float('{:e}'.format(float(dx2)).split('e')[0])
-                if base2 < lim_for_extra_sf:
-                    n2 -= 1
-                num_sf = max(1, n1, n2)
-            else:
-                x = str(x)
-                x_ = x.split('e')[0]
-                for i in reversed(range(len(x_))):
-                    x_ = x_.replace('0.'+'0'*i, '')
-                x_ = x_.replace('.','')
-                n = len(x_)
-                base = float('{:e}'.format(float(x)).split('e')[0])
-                if base < lim_for_extra_sf:
-                    n -= 1
-                num_sf = n
-            num_sf = max(1, num_sf)
-            center = float(x)
+            main = float(x)
             unc = [float(dx1), float(dx2)]
+            is_range = False
         else:
             text = text.replace(' --','--').replace('-- ','--')
             x1, x2 = text.split('--')
-            x1, _, _, _, n1, domain_1 = parse_as_rich_value(x1)
-            x2, _, _, _, n2, domain_2 = parse_as_rich_value(x2)
-            center = [x1, x2]
+            x1, _, _, _, _, domain_1 = parse_as_rich_value(x1)
+            x2, _, _, _, _, domain_2 = parse_as_rich_value(x2)
+            main = [x1, x2]
             unc = 0
-            is_lolim, is_uplim = False, False
-            num_sf = max(n1, n2)
+            is_lolim, is_uplim, is_range = False, False, True
             domain = [min(domain_1[0], domain_2[0]),
                       max(domain_1[1], domain_2[1])]
-        if is_uplim or is_lolim or type(center) is list:
-            num_sf -= 1
-        return center, unc, is_lolim, is_uplim, num_sf, domain
+        return main, unc, is_lolim, is_uplim, is_range, domain
     
     text = str(text)
-    if '10^' in text:
-        allow_log_scale = True
-        text = (text.replace('( ','(').replace(' )',')')
-                    .replace('10^ ','10^').replace('10^(','').replace(')',''))
-        center, unc, is_lolim, is_uplim, num_sf, domain = \
-            parse_as_rich_value(text)
-        unc = [10**center - 10**(center - unc[0]),
-               10**(center+unc[1]) - 10**center]
-        center = 10**center
-    else:
-        allow_log_scale = False
-        center, unc, is_lolim, is_uplim, num_sf, domain = \
-            parse_as_rich_value(text)
-    num_sf = num_sf if num_sf_or is None else num_sf_or
+    main, unc, is_lolim, is_uplim, is_range, domain = parse_as_rich_value(text)
     domain = domain if domain_or is None else domain_or
-    allow_log_scale = (allow_log_scale if allow_log_scale_or is None
-                       else allow_log_scale_or)
-    num_sf = max(1, num_sf)
-    y = RichValue(center, unc, is_lolim, is_uplim, num_sf, min_exp, domain,
-                  len_sample, allow_log_scale)   
+    y = RichValue(main, unc, is_lolim, is_uplim, is_range, domain)
     return y
 
 
-def rich_array(array, num_sf=None, min_exp=None, domain=None, len_sample=None,
-               allow_log_scale=None, check_limits=True, check_intervals=False):
+def rich_array(array, domain=None, check_limits=True, check_intervals=False):
     """
     Convert the input array to a rich array.
 
@@ -1722,28 +1544,9 @@ def rich_array(array, num_sf=None, min_exp=None, domain=None, len_sample=None,
     ----------
     array : array / list (str)
         Input array containing text strings representing rich values.
-    num_sf : int, optional
-        Number of significant figures to use for the uncertainties.
-        The default is the maximum of this variable for the elements of the
-        input array.
-    min_exp : int, optional
-        If use_exp is True, minimum decimal exponent, in absolute value, to
-        apply scientific notation. The default is the minimum of this variable
-        for all the elements of the input array.
     domain : list (float), optional
         The domain of the rich value, that is, the minimum and maximum
-        values that it can take. The default is the union of the domains of all
-        the elements of the input array.
-    len_sample : int, optional
-        In case a function has to be applied to this rich value and there
-        is no analytic formula for propagating the errors, it will be
-        calculated from  distributions with this number of samples.
-        The default is the number of elements of the array times the mean of
-        this variable for all the elements of the input array.
-    allow_log_scale : bool, optional
-        If True, the values of the rich array will be displayed as an exponent
-        in decimal base. The default is True if this variable is True for any
-        of the elements of the input array.
+        values that it can take. The default is [-np.inf, np.inf].
     check_limits : bool, optional
         If True, if any of the 1-sigma interval bounds equals or exceeds the
         domain, the value will be considered an upper/lower limit, for every
@@ -1759,60 +1562,31 @@ def rich_array(array, num_sf=None, min_exp=None, domain=None, len_sample=None,
         Resulting rich array.
     """
     array = np.array(array)
-    use_default_num_sf = True if num_sf is None else False
-    use_default_min_exp = True if min_exp is None else False
-    use_default_domain = True if domain is None else False
-    use_default_len_sample = True if len_sample is None else False
-    use_default_allow_log_scale = True if allow_log_scale is None else False
-    centers, uncs, are_lolims, are_uplims, are_ranges = [], [], [], [], []
-    min_exps, nums_sf, len_samples, domains, allow_log_scales = \
-        [], [], [], [], []
+    mains, uncs, are_lolims, are_uplims, are_ranges = [], [], [], [], []
     for element in array.flat:
-        x = (element if 'RichValue' in str(type(element))
-             else rich_value(element))
+        x = (element if type(element) is RichValue
+             else rich_value(element, domain))
         if check_limits:
             x.check_limit()
         if check_intervals:
             x.check_interval()
-        centers += [x.center]
+        mains += [x.main]
         uncs += [x.unc]
         are_lolims += [x.is_lolim]
         are_uplims += [x.is_uplim]
         are_ranges += [x.is_range]
-        if use_default_num_sf:
-            nums_sf += [x.num_sf]
-        if use_default_domain:
-            domains += [x.domain]
-        if use_default_len_sample:
-            len_samples += [x.len_sample]
-        if use_default_allow_log_scale:
-            allow_log_scales += [x.allow_log_scale]
-        if use_default_min_exp:
-            min_exps += [x.min_exp]
-    centers = np.array(centers).reshape(array.shape)
+    mains = np.array(mains).reshape(array.shape)
     uncs = np.array(uncs)
     uncs = np.array([uncs[:,0].reshape(array.shape).tolist(),
-                     uncs[:,1].reshape(array.shape).tolist()])
+                     uncs[:,1].reshape(array.shape).tolist()]).transpose()
     are_lolims = np.array(are_lolims).reshape(array.shape)
     are_uplims = np.array(are_uplims).reshape(array.shape)
     are_ranges = np.array(are_ranges).reshape(array.shape)
-    if use_default_num_sf:
-        num_sf = max(nums_sf)
-    if use_default_domain:
-        domain = [min([dom[0] for dom in domains]),
-                  max([dom[1] for dom in domains])]
-    if use_default_len_sample:
-        len_sample = int(np.mean(len_samples))
-    if use_default_allow_log_scale:
-        allow_log_scale = any(allow_log_scales)
-    if use_default_min_exp:
-        min_exp = min(min_exps)
-    new_array = RichArray(centers, uncs, are_lolims, are_uplims, are_ranges,
-                          num_sf, min_exp, domain, len_sample, allow_log_scale)
+    new_array = RichArray(mains, uncs, are_lolims, are_uplims, are_ranges,
+                          domain)
     return new_array
 
-def rich_dataframe(df, num_sf={}, min_exp={}, domain={}, len_sample={},
-                   allow_log_scale={}, check_limits=True, check_intervals=False):
+def rich_dataframe(df, domains=None, check_limits=True, check_intervals=False):
     """
     Convert the values of the input dataframe of text strings to rich values.
 
@@ -1820,41 +1594,12 @@ def rich_dataframe(df, num_sf={}, min_exp={}, domain={}, len_sample={},
     ----------
     df : dataframe (str)
         Input dataframe which contains text strings formatted as rich values.
-    num_sf : dict (int), optional
-        Dictionary containing this value for each column of the dataframe.    
-        Number of significant figures to use for the uncertainties.
-        By default, for each column, it will be the value for the first entry
-        if it is a rich value, and 1 if not.
-    use_exp : dict (bool), optional
-        Dictionary containing this value for each column of the dataframe.
-        If True, the values will be displayed in scientific notation
-        when printed on screen. By default, for each column, it will be the
-        value for the first entry if it is a rich value, and False if not.
-    domain : dict (list (float)), optional
+    domains : dict (list (float)), optional
         Dictionary containing this value for each column of the dataframe.
         The domain of the rich value, that is, the minimum and maximum
         values that it can take. By default, for each column, it will be the
         value for the first entry if it is a rich value, and [-np.inf, np.inf]
         if not.
-    len_sample : dict (int), optional
-        Dictionary containing this value for each column of the dataframe.
-        In case a function has to be applied to this rich value and there
-        is no analytic formula for propagating the errors, it will be
-        calculated from normal distributions with this number of samples.
-        By default, for each column, it will be the value for the first entry
-        if it is a rich value, and 10000 if not.
-    allow_log_scale : dict (bool), optional
-        Dictionary containing this value for each column of the dataframe.
-        If True, the values will be displayed as an exponent in decimal base.
-        By default, for each column, it will be the value for the first entry
-        if it is a rich value, and False if not.
-    min_exp : dict(bool), optional
-        Dictionary containing this value for each column of the dataframe.
-        If use_exp is True, minimum decimal exponent, in absolute value, to
-        apply scientific notation. The default is the minimum of this variable
-        for all the elements of the input array. By default, for each column,
-        it will be the value for the first entry if it is a rich value, and
-        False if not.
     check_limits : bool, optional
         If True, if any of the 1-sigma interval bounds equals or exceeds the
         domain, the value will be considered as an upper/lower limit.
@@ -1869,11 +1614,8 @@ def rich_dataframe(df, num_sf={}, min_exp={}, domain={}, len_sample={},
         Resulting dataframe of rich values.
     """
     df = pd.DataFrame(df)
-    use_default_num_sf = True if num_sf == {} else False
-    use_default_min_exp = True if min_exp == {} else False
-    use_default_len_sample = True if len_sample == {} else False
-    use_default_domain = True if domain == {} else False
-    use_default_allow_log_scale = True if allow_log_scale == {} else False
+    if type(domains) is not dict:
+        domains = {col: domains for col in df}
     for col in df:
         is_number = True
         text = str(df[col][0])
@@ -1882,32 +1624,8 @@ def rich_dataframe(df, num_sf={}, min_exp={}, domain={}, len_sample={},
                 is_number = False
                 break
         if is_number:
-            x = rich_value(text)
-        if use_default_num_sf:
-            num_sf[col] = (x.num_sf if is_number else
-                           defaultparams['number of significant figures'])
-        if use_default_min_exp:
-            min_exp[col] = (x.min_exp if is_number else
-                            defaultparams['minimum exponent for '
-                                           + 'scientific notation'])
-        if use_default_domain:
-            domain[col] = x.domain if is_number else defaultparams['domain']
-        if use_default_len_sample:
-            len_sample[col] = (x.len_sample if is_number else
-                               defaultparams['size of samples'])
-        if use_default_allow_log_scale:
-            allow_log_scale[col] = (x.allow_log_scale if is_number else
-                                    defaultparams['allow logarithmic scale'])
-    if type(num_sf) is not dict:
-        num_sf = {col: num_sf for col in df}
-    if type(min_exp) is not dict:
-        min_exp = {col: min_exp for col in df}
-    if type(domain) is not dict:
-        domain = {col: domain for col in df}
-    if type(len_sample) is not dict:
-        len_sample = {col: len_sample for col in df}
-    if type(allow_log_scale) is not dict:
-        allow_log_scale = {col: allow_log_scale for col in df}
+            domain = domains[col] if col in domains else None
+            x = rich_value(text, domain)
     new_df = copy.copy(df)
     for i,row in new_df.iterrows():
         for col in new_df:
@@ -1915,11 +1633,6 @@ def rich_dataframe(df, num_sf={}, min_exp={}, domain={}, len_sample={},
                              else False)
             if is_rich_value:
                 x = new_df.at[i,col]
-                x.num_sf = num_sf[col]
-                x.min_exp = min_exp[col]
-                x.domain = domain[col]
-                x.len_sample = len_sample[col]
-                x.allow_log_scale = allow_log_scale[col]
             else:
                 is_number = True
                 text = str(new_df.at[i,col])
@@ -1928,14 +1641,14 @@ def rich_dataframe(df, num_sf={}, min_exp={}, domain={}, len_sample={},
                         is_number = False
                         break
                 if is_number:
-                    x = rich_value(text, num_sf[col], min_exp[col], domain[col],
-                                   len_sample[col], allow_log_scale[col])
+                    domain = domains[col] if col in domains else None
+                    x = rich_value(text, domain)
             if is_rich_value or is_number:
                 if check_limits:
                     x.check_limit()
                 if check_intervals:
                     x.check_interval()
-                new_df.at[i,col] = x
+            new_df.at[i,col] = x
     new_df = RichDataFrame(new_df)
     return new_df
 
@@ -1961,7 +1674,7 @@ def general_pdf(x, loc=0, scale=1, bounds=None, norm=False):
         boundaries of the independent variable.
     bounds : list (float), optional
         Boundaries of the independent variable. The default is a interval
-        centered in the median and with semiwidth equal to 6 times the
+        mained in the median and with semiwidth equal to 6 times the
         uncertainty.
     norm : bool, optional
         If True, the function will be normalized. The default is False.
@@ -1976,7 +1689,7 @@ def general_pdf(x, loc=0, scale=1, bounds=None, norm=False):
     def symmetric_general_pdf(x, m=0., s=1., a=10., norm=False):
         """
         Symmetric general PDF with given median (m) and uncertainty (s) with a
-        boundary centered in the median with a given amplitude (a).
+        boundary mained in the median with a given amplitude (a).
         """
         y = np.zeros(len(x))
         if a >= 2*s:
@@ -1996,7 +1709,7 @@ def general_pdf(x, loc=0, scale=1, bounds=None, norm=False):
     if b is None:
         b = [m - 10*s, m + 10*s]
     if not b[0] < m < b[1]:
-        raise Exception('Center ({}) is not inside the boundaries {}.'
+        raise Exception('main ({}) is not inside the boundaries {}.'
                         .format(m, b))
     if not hasattr(s, '__iter__'):
         s = [s, s]
@@ -2063,7 +1776,7 @@ def general_distribution(loc=0, scale=1, bounds=None, size=1):
         boundaries of the independent variable.
     bounds : list (float), optional
         Boundaries of the independent variable. The default is a interval
-        centered in the median and with semiwidth equal to 6 times the
+        mained in the median and with semiwidth equal to 6 times the
         uncertainty.
     size : int, optional
         Number of samples of the distribution. The default is 1.
@@ -2077,7 +1790,7 @@ def general_distribution(loc=0, scale=1, bounds=None, size=1):
     if bounds is None:
         b = [m - 10*s, m + 10*s]
     if not b[0] < m < b[1]:
-        raise Exception('Center ({}) is not inside the boundaries {}.'
+        raise Exception('main ({}) is not inside the boundaries {}.'
                         .format(m, b))
     if not hasattr(s, '__iter__'):
         s = [s, s]
@@ -2156,7 +1869,7 @@ def loguniform_distribution(low=-1, high=1, size=1,
             x = np.append(x, [x1, x2])
     return x
 
-def center_and_uncs(distr, function=np.median, interval=68.27, fraction=1.):
+def main_and_uncs(distr, function=np.median, interval=68.27, fraction=1.):
     """
     Return the central value and uncertainties of the input distribution.
 
@@ -2168,7 +1881,7 @@ def center_and_uncs(distr, function=np.median, interval=68.27, fraction=1.):
         Function to calculate the central value of the distribution.
         The default is np.median.
     interval : float, optional
-        Size of the interval, in percentile, around the center value which
+        Size of the interval, in percentile, around the main value which
         defines the uncertainties. The default is 68.27 (1 sigma confidence
         interval).
     fraction : float, optional
@@ -2177,7 +1890,7 @@ def center_and_uncs(distr, function=np.median, interval=68.27, fraction=1.):
 
     Returns
     -------
-    center : float
+    main : float
         Central value of the distribution.
     uncs : tuple (float)
         Lower and upper uncertainties of the distribution.
@@ -2188,8 +1901,8 @@ def center_and_uncs(distr, function=np.median, interval=68.27, fraction=1.):
     margin = (1 - fraction) / 2
     if len(x) > 1:
         x = x[int(margin*len(x)):int((1-margin)*len(x))]
-    center = function(x)
-    difference = abs(x - center)
+    main = function(x)
+    difference = abs(x - main)
     ind = np.argwhere(difference == min(difference))
     if hasattr(ind, '__iter__'):
         ind = int(np.median(ind))
@@ -2202,12 +1915,12 @@ def center_and_uncs(distr, function=np.median, interval=68.27, fraction=1.):
     if perc2 > 100:
         perc1 -= abs(perc2 - 100)
         perc2 = 100
-    unc1 = center - np.percentile(x, perc1)
-    unc2 = np.percentile(x, perc2) - center
+    unc1 = main - np.percentile(x, perc1)
+    unc2 = np.percentile(x, perc2) - main
     unc1 *= 1 + margin
     unc2 *= 1 + margin
     uncs = [unc1, unc2]
-    return center, uncs
+    return main, uncs
 
 def add_two_rich_values(x, y):
     """
@@ -2228,19 +1941,18 @@ def add_two_rich_values(x, y):
     num_sf = max(x.num_sf, y.num_sf)
     min_exp = min(x.min_exp, y.min_exp)
     domain = [x.domain[0] + y.domain[0], x.domain[1] + y.domain[1]]
-    len_sample = max(x.len_sample, y.len_sample)
-    allow_log_scale = x.allow_log_scale | y.allow_log_scale
-    sigmas = defaultparams['minimum relative distance to the domain edges '
-                           + 'to apply analytic uncertainty propagation']
+    sigmas = defaultparams['limit factor to use approximate '
+                           + 'uncertainty propagation']
     if (not (x.is_interv() or y.is_interv())
             and min(x.rel_ampl()) > sigmas and min(y.rel_ampl())) > sigmas:
-        z = x.center + y.center
+        z = x.main + y.main
         dz = (np.array(x.unc)**2 + np.array(y.unc)**2)**0.5
-        z = RichValue(z, dz, False, False, num_sf, min_exp, domain,
-                      len_sample, allow_log_scale)
+        z = RichValue(z, dz, domain=domain)
     else:
         z = function_with_rich_values(lambda a,b: a+b, [x, y], domain=domain,
                                       is_function_vectorizable=True)
+    z.num_sf = num_sf
+    z.min_exp = min_exp
     return z
 
 def multiply_two_rich_values(x, y):
@@ -2265,24 +1977,25 @@ def multiply_two_rich_values(x, y):
         domain_combs = [x.domain[0] * y.domain[0], x.domain[0] * y.domain[1],
                         x.domain[1] * y.domain[0], x.domain[1] * y.domain[1]]
     domain1, domain2 = min(domain_combs), max(domain_combs)
-    domain1 = np.nan_to_num(domain1, nan=0.) if np.isnan(domain1) else domain1
-    domain2 = np.nan_to_num(domain2, nan=0.) if np.isnan(domain2) else domain2
+    domain1 = (np.nan_to_num(domain1, nan=-np.inf) if np.isnan(domain1)
+               else domain1)
+    domain2 = (np.nan_to_num(domain2, nan=np.inf) if np.isnan(domain2)
+               else domain2)
     domain = [domain1, domain2]
-    len_sample = max(x.len_sample, y.len_sample)
-    allow_log_scale = x.allow_log_scale | y.allow_log_scale
-    sigmas = defaultparams['minimum relative distance to the domain edges '
-                           + 'to apply analytic uncertainty propagation']
+    sigmas = defaultparams['limit factor to use approximate '
+                           + 'uncertainty propagation']
     if (not (x.is_interv() or y.is_interv())
-         and min(x.rel_ampl()) > sigmas and min(y.rel_ampl()) > sigmas):
-        z = x.center * y.center
+         and x.prop_factor() > sigmas and y.prop_factor() > sigmas):
+        z = x.main * y.main
         dx, dy = np.array(x.unc), np.array(y.unc)
-        # dz = z * ((dx/x.center)**2 + (dy/y.center)**2)**0.5
-        dz = (dx**2 * dy**2 + dx**2 * y.center**2 + dy**2 * x.center**2)**0.5
-        z = RichValue(z, dz, False, False, num_sf, min_exp, domain, len_sample,
-                      allow_log_scale)
+        # dz = z * ((dx/x.main)**2 + (dy/y.main)**2)**0.5
+        dz = (dx**2 * dy**2 + dx**2 * y.main**2 + dy**2 * x.main**2)**0.5
+        z = RichValue(z, dz, domain=domain)
     else:
         z = function_with_rich_values(lambda a,b: a*b, [x, y], domain=domain,
                                       is_function_vectorizable=True)
+    z.num_sf = num_sf
+    z.min_exp = min_exp
     return z
 
 def divide_two_rich_values(x, y):
@@ -2307,51 +2020,59 @@ def divide_two_rich_values(x, y):
         domain_combs = [x.domain[0] * y.domain[0], x.domain[0] * y.domain[1],
                         x.domain[1] * y.domain[0], x.domain[1] * y.domain[1]]
     domain1, domain2 = min(domain_combs), max(domain_combs)
-    domain1 = np.nan_to_num(domain1, nan=0.) if np.isnan(domain1) else domain1
-    domain2 = np.nan_to_num(domain2, nan=0.) if np.isnan(domain2) else domain2
+    domain1 = -np.inf if np.isinf(domain1) else domain1
+    domain2 = np.inf if np.isinf(domain1) else domain2
     domain = [domain1, domain2]
-    len_sample = max(x.len_sample, y.len_sample)
-    allow_log_scale = x.allow_log_scale | y.allow_log_scale
-    sigmas = defaultparams['minimum relative distance to the domain edges '
-                           + 'to apply analytic uncertainty propagation']
-    if (not (x.is_interv() or y.is_interv())
-         and min(x.rel_ampl()) > sigmas and min(y.rel_ampl()) > sigmas):
-        z = x.center / y.center
+    sigmas = defaultparams['limit factor to use approximate '
+                           + 'uncertainty propagation']
+    if (not (x.is_interv() or y.is_interv()) and 0 not in [x.main, y.main]
+         and x.prop_factor() > sigmas and y.prop_factor() > sigmas):
+        z = x.main / y.main
         dx, dy = np.array(x.unc), np.array(y.unc)
-        dz = z * ((dx/x.center)**2 + (dy/y.center)**2)**0.5
-        z = RichValue(z, dz, False, False, num_sf, min_exp, domain, len_sample,
-                      allow_log_scale)
+        dz = z * ((dx/x.main)**2 + (dy/y.main)**2)**0.5
+        z = RichValue(z, dz, domain=domain)
     else:
+        sigmas = (np.inf if y.main == 0 else
+                  defaultparams['limit factor to use approximate '
+                                + 'uncertainty propagation'])
         z = function_with_rich_values(lambda a,b: a/b, [x, y], domain=domain,
-                                      is_function_vectorizable=True)
+                                  is_function_vectorizable=True, sigmas=sigmas)
+    z.num_sf = num_sf
+    z.min_exp = min_exp
     return z
 
-def distribution_with_rich_values(function, args, len_args_samples=None):
+def distr_with_rich_values(function, args, len_samples=None,
+                                  is_function_vectorizable=False):
     """
     Same as function_with_rich_values, but just returns the final distribution.
+    
+    The input function has to return only one element.
     """
     if not hasattr(args, '__iter__'):
         args = [args]
-    if len_args_samples is None:
-        len_args_samples = int(len(args)
-                               * np.mean([arg.len_sample for arg in args]))
-    args_distr = [arg.sample(len_args_samples) for arg in args]
-    new_distr = function(*args_distr)
+    args = [rich_value(arg) if type(arg) is not RichValue else arg
+            for arg in args]
+    if len_samples is None:
+        len_samples = int(len(args)**0.5 * defaultparams['size of samples'])
+    args_distr = np.array([arg.sample(len_samples) for arg in args])
+    if is_function_vectorizable:
+        new_distr = function(*args_distr)
+    else:
+        new_distr = np.array([function(*args_distr[:,i])
+                              for i in range(len_samples)])
     return new_distr
 
 def function_with_rich_values(
-        function, args, len_args_samples=None, unc_function=None,
-        is_function_vectorizable=False,
-        sigmas=defaultparams['minimum relative distance to the domain edges '
-                             + 'to apply analytic uncertainty propagation'],
+        function, args, unc_function=None, is_function_vectorizable=False,
+        len_samples=None, domain=None,
+        sigmas=defaultparams['limit factor to use approximate '
+                               + 'uncertainty propagation'],
         use_sigma_combs=defaultparams['use 1-sigma combinations to '
-                                      + 'estimate uncertainty propagation'],
+                                      + 'approximate uncertainty propagation'],
         lims_fraction=defaultparams['fraction of the central value '
                                     + 'for upper/lower limits'],
         num_reps_lims=defaultparams['number of repetitions to estimate'
-                                    + ' upper/lower limits'],
-        num_sf=None, min_exp=None, domain=None, len_sample=None,
-        allow_log_scale=None):
+                                    + ' upper/lower limits']):
     """
     Apply a function to the input rich values.
 
@@ -2362,9 +2083,6 @@ def function_with_rich_values(
     args : list (rich values)
         List with the input rich values, in the same order as the arguments of
         the given function.
-    len_args_samples : int, optional
-        Size of the samples of the arguments. The default is the number of
-        arguments times the mean of this variable for all the arguments.
     unc_function : function, optional
         Function to estimate the uncertainties, in case that error propagation
         can be used. The arguments should be the central values first and then
@@ -2372,6 +2090,12 @@ def function_with_rich_values(
     is_function_vectorizable : bool, optional
         If True, the calculations of the function will be optimized making use
         of vectorization. The default is False.
+    len_samples : int, optional
+        Size of the samples of the arguments. The default is the number of
+        arguments times the default size of samples (10000).
+    domain : list (float), optional
+        Domain of the result. If not specified, it will be estimated
+        automatically.
     sigmas : float, optional
         Threshold to apply uncertainty propagation. The value is the distance
         to the bounds of the domain relative to the uncertainty.
@@ -2390,30 +2114,13 @@ def function_with_rich_values(
     num_reps_lims : int, optional
         Number of repetitions of the sampling done in the cases of having an
         upper/lower limit for better estimating its value. The default is 4.
-    num_sf : int, optional
-        Number of significant figures to display the resulting value.
-        The default is the maximum of this variable for all the arguments.
-    min_exp : int, optional
-        If use_exp is True, minimum decimal exponent, in absolute value, to
-        apply scientific notation to the resulting rich value.
-        The default is 4.
-    domain : list (float), optional
-        Domain of the result. If not specified, it will be estimated
-        automatically.
-    len_sample : int, optional
-        In case a function has to be applied to the resulting rich value and
-        there is no analytic formula for propagating the uncertainties, it will
-        be calculated from distributions with this number of samples.
-        The default is the mean of this value for all the arguments.
-    allow_log_scale : bool, optional
-        If True, the value will be displayed as an exponent in decimal
-        base. The default is False.
 
     Returns
     -------
     new_rich_value : rich value
         Resulting rich value.
     """
+    
     zero_log = defaultparams['decimal exponent to define zero']
     inf_log = defaultparams['decimal exponent to define infinity']
    
@@ -2445,89 +2152,104 @@ def function_with_rich_values(
     
     if not hasattr(args, '__iter__'):
         args = [args]
-    if len_args_samples is None:
-        len_args_samples = int(len(args)
-                               * np.mean([arg.len_sample for arg in args]))
-    if num_sf is None:
-        num_sf = max([arg.num_sf for arg in args])
-    if min_exp is None:
-        min_exp = min([arg.min_exp for arg in args])
-    if len_sample is None:
-        len_sample = int(np.mean([arg.len_sample for arg in args]))
-    if allow_log_scale is None:
-        allow_log_scale = max([arg.allow_log_scale for arg in args])
+    args = [rich_value(arg) if type(arg) is not RichValue else arg
+            for arg in args]
+    if len_samples is None:
+        len_samples = int(len(args)**0.5 * defaultparams['size of samples'])
+    num_sf = max([arg.num_sf for arg in args])
+    min_exp = min([arg.min_exp for arg in args])
     unc_propagation = \
         (not any([arg.is_interv() for arg in args])
-         and all([min(arg.rel_ampl()) > sigmas for arg in args]))
+         and all([arg.prop_factor() > sigmas for arg in args]))
     if use_sigma_combs:
         if (unc_function is None
             and (((unc_function is None and len(args) > 5))
-                 or all([min(arg.rel_ampl()) > 2*sigmas for arg in args]))):
+                 or all([arg.prop_factor() > sigmas for arg in args]))):
             unc_propagation = False
     else:
         if unc_function is None:
             unc_propagation = False
-    args_center = [arg.center for arg in args]
-    center = function(*args_center)
-    if hasattr(center, '__iter__'):
-        if type(center) is np.ndarray:
-            output_size = center.size
+    args_main = [arg.main for arg in args]
+    try:
+        main = function(*args_main)
+        if hasattr(main, '__iter__'):
+            if type(main) is np.ndarray:
+                output_size = main.size
+            else:
+                output_size = len(main)
         else:
-            output_size = len(center)
-    else:
-        output_size = 1
-    output_type = type(center) if output_size > 1 else RichValue
-    if not any(np.isnan([arg.center for arg in args])):
+            output_size = 1
+        output_type = type(main) if output_size > 1 else RichValue
+    except Exception:
+        function_code = inspect.getsourcelines(function)[0]
+        for line in function_code:
+            if 'lambda' in line:
+                line = line.split('lambda ')[1].split(':')[1]
+                if line.startswith('('):
+                    output = line[1:].split('),')[0]
+                elif line.startswith('['):
+                    output = line[1:].split('],')[0]
+                else:
+                    output = line.split(',')[0]
+                output_size = len(output.split(','))
+                break
+            elif 'return' in line:
+                output = line.split('return ')[1]
+                output_size = len(output.split(','))
+                break
+        output_type = list if '[' in output else tuple
+        
+    if not any(np.isnan([arg.main for arg in args])):
         if output_size > 1:
             is_function_vectorizable = False
         if domain is not None and not hasattr(domain[0], '__iter__'):
             domain = [domain]*output_size
         if unc_propagation:
-            center = [center] if output_size == 1 else center
+            main = [main] if output_size == 1 else main
             for k in range(output_size):
                 if domain is not None and domain[k] is None:
                     domain[k] = [-np.inf, np.inf]
-            domain = [[-np.inf, np.inf]]*output_size if domain is None else domain
+            domain = ([[-np.inf, np.inf]]*output_size if domain is None
+                      else domain)
             new_domain = domain
             if unc_function is not None:
                 args_unc = [np.array(arg.unc) for arg in args]
-                unc = unc_function(*args_center, *args_unc)
+                unc = unc_function(*args_main, *args_unc)
                 unc = [unc]*output_size if not hasattr(unc,'__iter__') else unc
             else:
                 inds_combs = list(itertools.product(*[[0,1,2]]*len(args)))
-                comb_center = tuple([1]*len(args))
-                inds_combs.remove(comb_center)
+                comb_main = tuple([1]*len(args))
+                inds_combs.remove(comb_main)
                 args_combs = []
-                args_all_vals = [[arg.center - arg.unc[0], arg.center,
-                                  arg.center + arg.unc[1]] for arg in args]
+                args_all_vals = [[arg.main - arg.unc[0], arg.main,
+                                  arg.main + arg.unc[1]] for arg in args]
                 for i, inds in enumerate(inds_combs):
                     args_combs += [[]]
                     for j, arg in enumerate(args):
                         args_combs[i] += [args_all_vals[j][inds[j]]]
                 new_comb = [function(*args_comb) for args_comb in args_combs]
-                unc = [[center[k] - min(new_comb[:][k]),
-                        max(new_comb[:][k]) - center[k]]
+                unc = [[main[k] - min(new_comb[:][k]),
+                        max(new_comb[:][k]) - main[k]]
                        for k in range(output_size)]
         else:
-            args_distr = np.array([arg.sample(len_args_samples)
-                                   for arg in args])
+            args_distr = np.array([arg.sample(len_samples) for arg in args])
             if is_function_vectorizable:
                 new_distr = function(*args_distr)
             else:
                 new_distr = np.array([function(*args_distr[:,i])
-                                      for i in range(len_args_samples)])
+                                      for i in range(len_samples)])
             if output_size == 1 and len(new_distr.shape) == 1:
                 new_distr = np.array([new_distr]).transpose()
-            center, unc, new_domain = [], [], []
+            main, unc, new_domain = [], [], []
             if domain is None:
                 domain_args_distr = np.array(
-                    [loguniform_distribution(*arg.domain, len_args_samples//4)
+                    [loguniform_distribution(*arg.domain, len_samples//4)
                      for arg in args])
                 if is_function_vectorizable:
                     domain_distr = function(*domain_args_distr)
                 else:
                     domain_distr = np.array([function(*domain_args_distr[:,i])
-                                             for i in range(len_args_samples//4)])
+                                             for i in range(len_samples//4)])
                 if output_size == 1 and len(domain_distr.shape) == 1:
                     domain_distr = np.array([domain_distr]).transpose()
             for k in range(output_size):
@@ -2544,42 +2266,42 @@ def function_with_rich_values(
                     y = y[k] if output_size > 1 else y
                     return y
                 rval_k = evaluate_distr(new_distr[:,k], domain_k, function_k,
-                    args, len_args_samples, is_function_vectorizable,
-                    lims_fraction, num_reps_lims, zero_log, inf_log,
-                    num_sf, min_exp, len_sample, allow_log_scale)
-                center_k = (rval_k.center if not rval_k.is_interv()
+                    args, len_samples, is_function_vectorizable,
+                    lims_fraction, num_reps_lims, zero_log, inf_log)
+                main_k = (rval_k.main if not rval_k.is_interv()
                             else rval_k.interval())
                 unc_k = rval_k.unc
-                center += [center_k]
+                main += [main_k]
                 unc += [unc_k]
                 new_domain += [domain_k]
     else:
-        center, unc = [np.nan]*output_size, [np.nan]*output_size
+        main, unc = [np.nan]*output_size, [np.nan]*output_size
         new_domain = [[min([arg.domain[0] for arg in args]),
                        max([arg.domain[1] for arg in args])] * output_size]
-    output = [RichValue(center[k], unc[k], False, False, num_sf, min_exp,
-                        new_domain[k], len_sample, allow_log_scale)
-              for k in range(output_size)]
+        
+    output = []
+    for k in range(output_size):
+        new_rich_value = RichValue(main[k], unc[k], domain=new_domain[k])
+        new_rich_value.num_sf = num_sf
+        new_rich_value.min_exp = min_exp
+        output += [new_rich_value]
     output = output[0] if output_size == 1 else output
     if output_size > 1:
         if output_type is tuple:
             output = tuple(output)
         elif output_type is np.ndarray:
             output = np.array(output)
+            
     return output
 
 def evaluate_distr(distr, domain=[-np.inf,np.inf], function=None, args=None,
-        len_args_samples=int(1e4), is_function_vectorizable=False,
+        len_samples=int(1e4), is_function_vectorizable=False,
         lims_fraction=defaultparams['fraction of the central value '
                                     + 'for upper/lower limits'],
         num_reps_lims=defaultparams['number of repetitions to estimate'
                                     + ' upper/lower limits'],
         zero_log=defaultparams['decimal exponent to define zero'],
-        inf_log=defaultparams['decimal exponent to define infinity'],
-        num_sf=defaultparams['number of significant figures'],
-        min_exp=defaultparams['minimum exponent for scientific notation'],
-        len_sample=defaultparams['size of samples'],
-        allow_log_scale=defaultparams['allow logarithmic scale']):
+        inf_log=defaultparams['decimal exponent to define infinity']):
     """
     Interpret the given distribution as a rich value.
 
@@ -2633,11 +2355,11 @@ def evaluate_distr(distr, domain=[-np.inf,np.inf], function=None, args=None,
     distr = np.array(distr)
     domain1, domain2 = domain if domain is not None else [-np.inf, np.inf]
     x1, x2 = np.min(distr), np.max(distr)
-    center, unc = center_and_uncs(distr)
-    ord_range_1s = magnitude_order_range([center-unc[0], center+unc[1]])
+    main, unc = main_and_uncs(distr)
+    ord_range_1s = magnitude_order_range([main-unc[0], main+unc[1]])
     ord_range_x = magnitude_order_range([x1, x2])
     distr = distr[np.isfinite(distr)]
-    probs_hr, bins_hr = np.histogram(distr, bins=4*len_args_samples)
+    probs_hr, bins_hr = np.histogram(distr, bins=4*len_samples)
     probs_lr, bins_lr = np.histogram(distr, bins=20)
     max_prob_hr = probs_hr.max()
     max_prob_lr = probs_lr.max()
@@ -2653,31 +2375,31 @@ def evaluate_distr(distr, domain=[-np.inf,np.inf], function=None, args=None,
         unc = 0
     elif cond_hr1:
         if num_reps_lims > 0 and args is not None:
-            xx1, xx2, xxc = [x1], [x2], [center]
+            xx1, xx2, xxc = [x1], [x2], [main]
             for i in range(num_reps_lims):
-                args_distr = np.array([arg.sample(len_args_samples)
+                args_distr = np.array([arg.sample(len_samples)
                                        for arg in args])
                 if is_function_vectorizable:
                     distr = function(*args_distr)
                 else:
                     distr = np.array([function(*args_distr[:,j])
-                                      for j in range(len_args_samples)])
+                                      for j in range(len_samples)])
                 x1i, x2i = np.min(distr), np.max(distr)
                 xci = np.median(distr)
                 xx1 += [x1i]
                 xx2 += [x2i]
                 xxc += [xci]
             x1, x2 = min(xx1), max(xx2)
-            center = np.median(xxc)
-        ord_range_b = log10(abs(center)) - log10(abs(x1))
+            main = np.median(xxc)
+        ord_range_b = log10(abs(main)) - log10(abs(x1))
         x1, x2 = add_zero_infs([x1, x2], zero_log-6, inf_log-6)
         if ord_range_b > inf_log-6 and cond_hr2:
-            center = np.nan
+            main = np.nan
             unc = [np.inf, np.inf]
         else:
             if args is not None:
-                args_center = [arg.center for arg in args]
-                x0 = function(*args_center)
+                args_main = [arg.main for arg in args]
+                x0 = function(*args_main)
                 domain_ = add_zero_infs([domain1, domain2],
                                         zero_log+6, inf_log-6)
                 x_ = RichValue([x1,x2], domain=domain_)
@@ -2685,33 +2407,32 @@ def evaluate_distr(distr, domain=[-np.inf,np.inf], function=None, args=None,
                     x1 = x0 + (1 - lims_fraction) * (x1 - x0)
                 elif x_.is_uplim:
                     x2 = x0 - (1 - lims_fraction) * (x0 - x2)
-            center = [x1, x2]
+            main = [x1, x2]
             unc = [0, 0]
     elif (cond_range or (not cond_range and cond_hr2)
           or (not cond_range and not cond_hr2 and cond_lr)):
         xx1, xx2 = [x1], [x2]
         if num_reps_lims > 0 and args is not None:
             for i in range(num_reps_lims):
-                args_distr = np.array([arg.sample(len_args_samples)
+                args_distr = np.array([arg.sample(len_samples)
                                        for arg in args])
                 if is_function_vectorizable:
                     distr = function(*args_distr)
                 else:
                     distr = np.array([function(*args_distr[:,j])
-                                      for j in range(len_args_samples)])
+                                      for j in range(len_samples)])
                 x1i, x2i = np.min(distr), np.max(distr)
                 xx1 += [x1i]
                 xx2 += [x2i]
             x1 = np.median(xx1)
             x2 = np.median(xx2)
         x1, x2 = add_zero_infs([x1, x2], zero_log+6, inf_log-6)
-        center = [x1, x2]
+        main = [x1, x2]
         unc = [0, 0]
     
-    rval = RichValue(center, unc, False, False, num_sf, min_exp, domain,
-                     len_sample, allow_log_scale)
+    z = RichValue(main, unc, domain=domain)
             
-    return rval
+    return z
 
 def function_with_rich_arrays(function, args, elementwise=False, **kwargs):
     """
@@ -2737,7 +2458,11 @@ def function_with_rich_arrays(function, args, elementwise=False, **kwargs):
     """
     if type(args) not in (tuple, list):
         args = [args]
+    args = [rich_array(arg) if type(arg) != RichArray else arg for arg in args]
     shape = args[0].shape
+    if 'len_samples' not in kwargs:
+        kwargs['len_samples'] = int(len(args)**0.5
+                                    * defaultparams['size of samples'])
     if elementwise:
         same_shapes = True
         for arg in args[1:]:
@@ -2750,8 +2475,8 @@ def function_with_rich_arrays(function, args, elementwise=False, **kwargs):
         args_flat = np.array([arg.flatten() for arg in args])
         for i in range(args[0].size):
             args_i = np.array(args_flat)[:,i]
-            new_rich_value = \
-                function_with_rich_values(function, args_i, **kwargs)
+            new_rich_value = function_with_rich_values(function, args_i,
+                                                       **kwargs)
             new_array = np.append(new_array, new_rich_value)
         new_array = rich_array(new_array.reshape(shape))
         output = new_array
@@ -2805,19 +2530,17 @@ def rich_fmean(array, function=lambda x: x, inverse_function=lambda x: x,
     """
     if function is not None and inverse_function is None:
         raise Exception('Inverse function not specified.')
-    array = rich_array(array)
+    array = rich_array(array) if type(array) is not RichArray else array
     if weights is None:
         weights = np.ones(len(array))
     weights = rich_array(weights, domain=[0,np.inf])
-    def fmean_function(*args):
-        x = args[:len(args)//2].reshape(array.shape)
-        w = args[len(args)//2:].reshape(weights.shape)
-        w = weight_function(w)
-        y = inverse_function((1/sum(w)) * sum([wi * function(xi)
-                                               for xi,wi in zip(x,w)]))
+    def fmean_function(x,w):
+        x_f = function(x)
+        w_f = weight_function(w)
+        w_f /= sum(w_f)
+        y = inverse_function(np.sum(x_f * w_f))
         return y
-    y = function_with_rich_values(fmean_function,
-                                  [*array.flat, *weights.flat], **kwargs)
+    y = function_with_rich_arrays(fmean_function, [array, weights], **kwargs)
     return y
 
 def bounded_gaussian(x, m=0., s=1., a=10., norm=False):
@@ -2919,7 +2642,7 @@ def errorbar(x, y, lims_factor=None, **kwargs):
         List containing the factors that define the sizes of the arrows for
         displaying the upper/lower limits. By default it will be calculated
         automatically.
-    **kwargs :
+    kwargs : arguments, optional
         Matplotlib's 'errorbar' keyword arguments.
 
     Returns
@@ -2936,7 +2659,7 @@ def errorbar(x, y, lims_factor=None, **kwargs):
             kwarg = default
         return kwarg
     def lim_factor(x):
-        xc = np.sort(x.centers())
+        xc = np.sort(x.mains())
         xc = xc[np.isfinite(xc)]
         with np.errstate(all='ignore'):
             r = abs(linregress(xc, np.arange(len(xc))).rvalue)
@@ -2961,7 +2684,7 @@ def errorbar(x, y, lims_factor=None, **kwargs):
     ecolor = set_kwarg('ecolor', 'black')
     fmt = set_kwarg('fmt', '.')
     cond = ~(xc.are_ranges() | yc.are_ranges())
-    plot = plt.errorbar(xc.centers()[cond], yc.centers()[cond],
+    plot = plt.errorbar(xc.mains()[cond], yc.mains()[cond],
                 xerr=xc.uncs()[:,cond], yerr=yc.uncs()[:,cond],
                 uplims=yc.are_uplims()[cond], lolims=yc.are_lolims()[cond],
                 xlolims=xc.are_lolims()[cond], xuplims=xc.are_uplims()[cond],
@@ -2969,20 +2692,20 @@ def errorbar(x, y, lims_factor=None, **kwargs):
     cond = xc.are_ranges()
     for xi,yi in zip(xc, yc):
         if xi.is_range & ~xi.is_lim():
-            plt.errorbar(xi.center, yi.center, xerr=xi.unc_eb(),
+            plt.errorbar(xi.main, yi.main, xerr=xi.unc_eb(),
                          uplims=yi.is_uplim, lolims=yi.is_uplim,
                          fmt=fmt, color='None', ecolor=ecolor, **kwargs)
             for xij in yi.interval():
-                plt.errorbar(xij, yi.center, xerr=xi.unc_eb(), fmt=fmt,
+                plt.errorbar(xij, yi.main, xerr=xi.unc_eb(), fmt=fmt,
                              color='None', ecolor=ecolor, **kwargs)
     cond = yc.are_ranges()
     for xi,yi in zip(xc[cond], yc[cond]):
         if yi.is_range:
-            plt.errorbar(xi.center, yi.center, yerr=yi.unc_eb(),
+            plt.errorbar(xi.main, yi.main, yerr=yi.unc_eb(),
                          xuplims=xi.is_uplim, xlolims=xi.is_uplim,
                          fmt=fmt, color='None', ecolor=ecolor, **kwargs)
             for yij in yi.interval():
-                plt.errorbar(xi.center, yij, xerr=xi.unc_eb(), fmt=fmt,
+                plt.errorbar(xi.main, yij, xerr=xi.unc_eb(), fmt=fmt,
                              color='None', ecolor=ecolor, **kwargs)
     return plot
 
@@ -3007,7 +2730,7 @@ def point_fit(y, function, guess, num_samples=3000,
         Function that defines the error between two numbers: a sample of a rich
         value (first argument) and a numeric prediction of it (second
         argument). The default is the squared error.
-    **kwargs : arguments
+    kwargs : arguments, optional
         Keyword arguments of SciPy's function 'minimize'.
 
     Returns
@@ -3018,14 +2741,14 @@ def point_fit(y, function, guess, num_samples=3000,
             List containing the optimized values for the parameters.
         - samples : array (float)
             Array containing the samples of the fitted parameters used to
-            compute the rich values. Its shape is (len_sample, num_params),
+            compute the rich values. Its shape is (num_samples, num_params),
             with num_params being the number of parameters to be fitted.
         - loss : array (float)
             Array containing the validation loss corresponding for each group
             of fitted parameters in the 'samples' entry.
         - fails : int
             Number of times that the fit failed, for the iterations among the
-            different samples.
+            different samples (the number of iterations is num_samples).
     """
     ya = rich_array(y)
     y = rich_array([y]) if len(ya.shape) == 0 else ya
@@ -3112,14 +2835,14 @@ def curve_fit(x, y, function, guess, num_samples=3000,
             List containing the optimized values for the parameters.
         - samples : array (float)
             Array containing the samples of the fitted parameters used to
-            compute the rich values. Its shape is (len_sample, num_params),
+            compute the rich values. Its shape is (num_samples, num_params),
             with num_params being the number of parameters to be fitted.
         - loss : array (float)
             Array containing the validation loss corresponding for each group
             of fitted parameters in the 'samples' entry.
         - fails : int
             Number of times that the fit failed, for the iterations among the
-            different samples (a number equal to len_sample).
+            different samples (the number of iterations is num_samples).
     """
     if len(x) != len(y):
         raise Exception('Input arrays have not the same size.')
@@ -3192,7 +2915,6 @@ def curve_fit(x, y, function, guess, num_samples=3000,
     result = {'parameters': params_fit, 'samples': samples,
               'loss': losses, 'fails': num_fails}
     return result
-
     
 # Function abbreviations.
 rval = rich_value
