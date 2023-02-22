@@ -53,6 +53,7 @@ defaultparams = {
     'number of significant figures': 1,
     'limit for extra significant figure': 2.5,
     'minimum exponent for scientific notation': 4,
+    'signal-to-noise to define upper/lower limits': 2.,
     'limit factor to use approximate uncertainty propagation': 20.,
     'use 1-sigma combinations to approximate uncertainty propagation': False,
     'fraction of the central value for upper/lower limits': 0.1,
@@ -377,44 +378,74 @@ class RichValue():
             The domain of the rich value, that is, the minimum and maximum
             values that it can take.
         """
+        if domain is None:
+            domain = defaultparams['domain']
+        if domain[0] == domain[1]:
+            raise Exception('Invalid domain {}.'.format(domain))
         unc_or = copy.copy(unc)
+        main_or = copy.copy(main)
         if type(main) in [list, tuple]:
-            if main[0] == domain[0]:
+            main = [float(main[0]), float(main[1])]
+            if main_or[0] <= domain[0]:
                 is_uplim = True
-                unc = 0
-            if main[1] == domain[1]:
-                is_lolim = True
-                unc = 0
-            if is_lolim and is_uplim:
-                main = np.nan
-                unc = np.inf
-            elif is_uplim:
                 main = main[1]
-            elif is_lolim:
+                unc = 0
+            elif main_or[1] >= domain[1]:
+                is_lolim = True
                 main = main[0]
-            if not (is_lolim or is_uplim):
+                unc = 0
+            else:
                 is_range = True
-                if main[0] >= main[1]:
-                    raise Exception('Wrong interval: {}'.format(main))
+            if is_lolim and is_uplim:
+                is_range = True
+                main = domain
+            if is_range:
                 unc = (main[1] - main[0]) / 2
                 main = (main[0] + main[1]) / 2
+        else:
+            main = float(main)
         if not hasattr(unc, '__iter__'):
             unc = [unc, unc]
-        main = np.nan if any(np.isinf(unc)) else main
-        unc = np.nan_to_num(unc, nan=0.) if any(np.isnan(unc)) else unc
+        if any(np.isinf(unc)):
+            main = np.nan
+            unc = np.nan_to_num(unc, nan=0., posinf=0.)
         unc = list(unc)
+        unc = [float(unc[0]), float(unc[1])]
         unc[0] = abs(unc[0])
-        if not np.isinf(main):
-            unc[0] = min(main - domain[0], unc[0])
-            unc[1] = min(domain[1] - main, unc[1])
-        if not (is_lolim or is_uplim or is_range) and unc[1] < 0:
+        if not (is_lolim or is_uplim) and unc[1] < 0:
             unc_text = ('Superior uncertainty' if hasattr(unc_or, '__iter__')
                         else 'Uncertainty')
             raise Exception('{} cannot be negative.'.format(unc_text))
-        if (not np.isnan(main) and unc != [0,0]
-                and not domain[0] <= main <= domain[1]):
-            raise Exception('Invalid domain {} for main in {}.'
-                            .format(domain, main))
+        ampl = [main - domain[0], domain[1] - main]
+        with np.errstate(divide='ignore', invalid='ignore'):
+            rel_ampl = list(np.array(ampl) / np.array(unc))
+        if not (is_lolim or is_uplim):
+            is_range_domain = False
+            if min(rel_ampl) <= 1.:
+                sigmas = defaultparams['signal-to-noise to define '
+                                       + 'upper/lower limits']
+                x1 = max(main - unc[0], domain[0])
+                x2 = min(main + unc[1], domain[1])
+                if x1 == domain[0] and x2 != domain[1]:
+                    main += sigmas * unc[1]
+                    if main < domain[1]:
+                        is_uplim = True
+                    else:
+                        is_range = True
+                        is_range_domain = True
+                elif x2 == domain[1] and x1 != domain[0]:
+                    main -= sigmas * unc[0]
+                    if main > domain[0]:
+                        is_lolim = True
+                    else:
+                        is_range = True
+                        is_range_domain = True
+                else:
+                    is_range = True
+            if min(rel_ampl) <= 1. and is_range_domain:
+                main = np.mean(domain)
+                unc = [(domain[1] - domain[0]) / 2] * 2
+                
         self.main = main
         self.unc = unc
         self.is_lolim = is_lolim
@@ -433,7 +464,17 @@ class RichValue():
         """Upper/lower limit or constant range of values"""
         isinterv = self.is_range or self.is_lim()
         return isinterv
+    
+    def is_centr(self):
+        """Centered value"""
+        iscentr = not self.is_interv()
+        return iscentr
         
+    def center(self):
+        """Central value"""
+        cent = self.main if self.is_centr() else np.nan
+        return cent
+    
     def unc_eb(self):
         """Uncertainties of the rich value with shape (2,1)"""
         unceb = [[self.unc[0]], [self.unc[1]]]
@@ -442,15 +483,16 @@ class RichValue():
     def rel_unc(self):
         """Relative uncertainties of the rich value"""
         m, s = self.main, self.unc
-        with np.errstate(all='ignore'):
-            runc = list(np.array(s) / abs(m)) if m != 0 else [np.inf, np.inf]
+        with np.errstate(divide='ignore'):
+            runc = list(np.array(s) / abs(m))
         return runc
     
     def signal_noise(self):
         """Signal-to-noise ratios (S/N)"""
         m, s = self.main, self.unc
-        with np.errstate(all='ignore'):
-            s_n = list(np.nan_to_num(abs(m) / np.array(s), nan=0))
+        with np.errstate(divide='ignore', invalid='ignore'):
+            s_n = list(np.nan_to_num(abs(m) / np.array(s),
+                       nan=0, posinf=np.nan))
         return s_n
         
     def ampl(self):
@@ -462,9 +504,8 @@ class RichValue():
     def rel_ampl(self):
         """Relative amplitudes of the rich value"""
         s, a = self.unc, self.ampl()
-        with np.errstate(all='ignore'):
-            a_s = [a[0]/s[0] if abs(s[0]) != 0 else np.inf,
-                   a[1]/s[1] if abs(s[1]) != 0 else np.inf]
+        with np.errstate(divide='ignore'):
+            a_s = list(np.array(a) / np.array(s))
         return a_s
     
     def prop_factor(self):
@@ -487,32 +528,13 @@ class RichValue():
             else:
                 interv = [self.main - self.unc[0], self.main + self.unc[1]]
         return interv
-    
-    def check_limit(self, sigmas=3.):
-        """Autodetect upper/lower limit"""
+  
+    def check_limit(self, sigmas=1.):
+        """Autodetect interval or upper/lower limit"""
         a_s = self.rel_ampl()
         if not self.is_lim():
-            if a_s[0] <= 1:
-                self.is_uplim = True
-                sigmas = min(sigmas, (self.domain[1]-self.main)/self.unc[1])
-                sigmas -= 1e-20
-                self.main = self.main + sigmas*self.unc[1]
-            if a_s[1] <= 1:
-                self.is_lolim = True
-                sigmas = min(sigmas, (self.main-self.domain[0])/self.unc[0])
-                sigmas -= 1e-20
-                self.main = self.main - sigmas*self.unc[1]
-            if self.is_lolim and self.is_uplim:
-                self.main = np.nan
-                self.unc = [np.inf, np.inf]
-  
-    def check_interval(self, sigmas=3.):
-        """Autodetect interval or upper/lower limit"""
-        with np.errstate(all='ignore'):
-            a_s = np.array(self.ampl()) / max(self.unc)
-        if not self.is_lim():
-            if min(a_s) <= 1:
-                x1, x2 = self.interval()
+            if min(a_s) <= 1.:
+                x1, x2 = self.interval(sigmas=1.)
                 if x1 == self.domain[0] and x2 != self.domain[1]:
                     self.is_uplim = True
                     self.main += sigmas * self.unc[1]
@@ -557,8 +579,7 @@ class RichValue():
             x1 = max(domain[0], x1)
         if not np.isnan(domain[1]):
             x2 = min(domain[1], x2)
-        with np.errstate(all='ignore'):
-            new_unc = [main - x1, x2 - main]
+        new_unc = [main - x1, x2 - main]
         if (len(round_sf(new_unc[0])) > len(round_sf(unc[0]))
                 or len(round_sf(new_unc[1])) > len(round_sf(unc[0]))):
             n -= 1
@@ -768,7 +789,7 @@ class RichValue():
         return new_rich_value
     
     def __add__(self, other):
-        other_ = (other.main if 'RichValue' in str(type(other))
+        other_ = (other.main if type(other) is RichValue
                   and other.unc==[0,0] else other)
         if type(other_) is RichValue:
             new_rich_value = add_two_rich_values(self, other_)
@@ -792,17 +813,16 @@ class RichValue():
         return -(self - other)
     
     def __mul__(self, other):
-        other_ = (other.main if 'RichValue' in str(type(other))
+        other_ = (other.main if type(other) is RichValue
                   and other.unc==[0,0] else other)
         if type(other_) is RichValue:
             new_rich_value = multiply_two_rich_values(self, other_)
         else:
             if other_ != 0:
-                with np.errstate(all='ignore'):
-                    x = self.main * other_
-                    dx = np.array(self.unc) * other_
-                    domain = np.array(self.domain) * other_
-                    domain = [min(domain), max(domain)]
+                x = self.main * other_
+                dx = np.array(self.unc) * other_
+                domain = np.array(self.domain) * other_
+                domain = [min(domain), max(domain)]
                 new_rich_value = RichValue(x, dx, self.is_lolim, self.is_uplim,
                                            self.is_range, domain)
                 new_rich_value.num_sf = self.num_sf
@@ -815,13 +835,13 @@ class RichValue():
         return self * other
     
     def __truediv__(self, other):
-        other_ = (other.main if 'RichValue' in str(type(other))
+        other_ = (other.main if type(other) is RichValue
                   and other.unc==[0,0] else other)
         if type(other_) is RichValue:
             new_rich_value = divide_two_rich_values(self, other_)
         else:
             if other_ != 0:
-                with np.errstate(all='ignore'):
+                with np.errstate(divide='ignore', invalid='ignore'):
                     x = self.main / other_
                     dx = np.array(self.unc) / other_
                     domain = np.array(self.domain) / other_
@@ -835,13 +855,13 @@ class RichValue():
         return new_rich_value
 
     def __rtruediv__(self, other):
-        other_ = (other.main if 'RichValue' in str(type(other))
+        other_ = (other.main if type(other) is RichValue
                   and other.unc==[0,0] else other)
         if type(other_) is RichValue:
             new_rich_value = divide_two_rich_values(other_, self)
         else:
             if other_ != 0:
-                with np.errstate(all='ignore'):
+                with np.errstate(divide='ignore'):
                     x = other_ / self.main
                     dx = x * np.array(self.unc) / self.main
                     domain = other_ / np.array(self.domain)
@@ -865,7 +885,7 @@ class RichValue():
             or (domain[0] < 0 and type(other) is not RichValue)
                 and int(other) == other and self.prop_factor() < sigmas):
             other_ = (other if type(other) is RichValue
-                      else RichValue(other, num_sf=self.num_sf))
+                      else RichValue(other))
             if main != 0:
                 if type(other) is not RichValue and other%2 == 0:
                     domain = [0, np.inf]
@@ -874,6 +894,7 @@ class RichValue():
                 new_rich_value = \
                     function_with_rich_values(lambda a,b: a**b, [self, other_],
                                               domain=domain)
+                new_rich_value.num_sf = max(self.num_sf, other_.num_sf)
             else:
                 new_rich_value = RichValue(0, num_sf=self.num_sf)
         elif (type(other) is not RichValue and self.prop_factor() > sigmas):
@@ -894,6 +915,7 @@ class RichValue():
                 domain = [-np.inf, np.inf]
             new_rich_value = RichValue(x, dx, self.is_lolim, self.is_uplim,
                                        domain)
+            new_rich_value.num_sf = self.num_sf
         else:
             if (type(other) is RichValue and other.domain[0] < 0
                     and not np.isinf(other.main)):
@@ -908,7 +930,8 @@ class RichValue():
             domain = [-np.inf, 0]
         else:
             domain = [-np.inf, np.inf]
-        other_ = RichValue(other, domain=domain, num_sf=self.num_sf)
+        other_ = RichValue(other, domain=domain)
+        other_.num_sf = self.num_sf
         new_rich_value = other_ ** self
         return new_rich_value
     
@@ -923,14 +946,14 @@ class RichValue():
             ind = np.argmin(abs(x - main))
             if hasattr(ind, '__iter__'):
                 ind = ind[0]
-            y[ind] = 1
+            y[ind] = 1.
         else:
             if not self.is_interv():
                 y = general_pdf(x, main, unc, domain, norm=True)
             elif self.is_lolim and not self.is_uplim:
-                y[x > main] = 0.01
+                y[x > main] = 0.
             elif self.is_uplim and not self.is_lolim:
-                y[x < main] = 0.01
+                y[x < main] = 0.
             elif self.is_range:
                 x1, x2 = main - unc, main + unc
                 y[(x > x1) & (x < x2)] = 1 / (x2 - x1)
@@ -980,11 +1003,11 @@ class RichValue():
 
 class RichArray(np.ndarray):
     """
-    A class to store several values with uncertainties or with upper/lower limits.
+    A class to store values with uncertainties or upper/lower limits.
     """
     
     def __new__(cls, mains, uncs=None, are_lolims=None, are_uplims=None,
-                are_ranges=None, domain=None):
+                are_ranges=None, domains=None):
         """
         Parameters
         ----------
@@ -992,20 +1015,20 @@ class RichArray(np.ndarray):
             Array of main values.
         uncs : list / array (float), optional
             Array of lower and upper uncertainties associated with the central
-            values. The default is None.
+            values. The default is all 0.
         are_lolims : list / array (bool), optional
             Array of logical variables that indicate if each mian value is
-            actually a lower limit. The default is None.
+            actually a lower limit. The default is all False.
         are_uplims : list / array (bool), optional
             Array of logical variables that indicate if each main value is
-            actually an upper limit. The default is None.
+            actually an upper limit. The default is all False.
         are_ranges : list / array (bool), optional
             Array of logical variables that indicate if each rich value is
             actually a constant range of values defined by the main value and
-            the uncertainties. The default is None.
-        domain : list (float), optional
-            The domain of the rich value, that is, the minimum and maximum
-            values that it can take. The default is [-np.inf, np.inf].
+            the uncertainties. The default is all False.
+        domains : list / array (float), optional
+            Array of domains for each entry of the rich value.
+            The default is [-np.inf, np.inf].
         """
         mains = np.array(mains)
         if uncs is None:
@@ -1016,26 +1039,40 @@ class RichArray(np.ndarray):
             are_uplims = np.zeros(mains.shape, bool)
         if are_ranges is None:
             are_ranges = np.zeros(mains.shape, bool)
+        if domains is None:
+            domains = (np.array([[-np.inf, np.inf] for x in mains.flat])
+                       .reshape((*mains.shape, 2))).transpose()
         uncs = np.array(uncs)
         are_lolims = np.array(are_lolims)
         are_uplims = np.array(are_uplims)
         are_ranges = np.array(are_ranges)
+        domains = np.array(domains)
         array = np.empty(mains.size, object)
         if uncs.shape == (*mains.shape, 2):
             uncs = uncs.transpose()
         elif uncs.shape == mains.shape:
-            uncs = [[uncs]]*2
-            uncs = np.array(uncs).reshape((2, *mains.shape))
+            uncs = np.array([[uncs]]*2).reshape((2, *mains.shape))
+        if domains.shape == (*mains.shape, 2):
+            domains = domains.transpose()
+        elif domains.flatten().shape == (2,):
+            domains = (np.array([domains for x in mains.flat])
+                       .reshape((*mains.shape, 2))).transpose()
+        mains_flat = mains.flatten()
+        uncs_flat = uncs.flatten()
+        are_lolims_flat = are_lolims.flatten()
+        are_uplims_flat = are_uplims.flatten()
+        are_ranges_flat = are_ranges.flatten()
+        domains_flat = domains.flatten()
+        offset = len(uncs_flat) // 2
         for i in range(mains.size):
-            main = mains.flatten()[i]
-            unc_flat = uncs.flatten()
-            unc = [unc_flat[i], unc_flat[i+len(unc_flat)//2]]
-            is_lolim = are_lolims.flatten()[i]
-            is_uplim = are_uplims.flatten()[i]
-            is_range = are_ranges.flatten()[i]
-            main = [main - unc[0], main + unc[1]] if is_range else main
-            array[i] = RichValue(main, unc, is_lolim, is_uplim,
-                                 is_range, domain)
+            main = mains_flat[i]
+            unc = [uncs_flat[i], uncs_flat[i+offset]]
+            is_lolim = are_lolims_flat[i]
+            is_uplim = are_uplims_flat[i]
+            is_range = are_ranges_flat[i]
+            domain = [domains_flat[i], domains_flat[i+offset]]
+            array[i] = RichValue(main, unc, is_lolim, is_uplim, is_range,
+                                 domain)
         array = array.reshape(mains.shape)
         array = array.view(cls)
         return array
@@ -1055,103 +1092,84 @@ class RichArray(np.ndarray):
     
     def ravel(self, order='C'):
         return rich_array(np.array(self).ravel(order))
-    
+
     def mains(self):
-        new_array = np.empty(0, float)
-        for x in self.flat:
-            new_array = np.append(new_array, x.main)
-        new_array = new_array.reshape(self.shape)
+        new_array = np.array([x.main for x in self.flat]).reshape(self.shape)
         return new_array
 
     def uncs(self):
-        new_array = np.empty(0, float)
-        for x in self.flat:
-            new_array = np.append(new_array, x.unc)
-        new_array = new_array.reshape([*self.shape,2]).transpose()
+        new_array = (np.array([x.unc for x in self.flat])
+                     .reshape([*self.shape,2]).transpose())
         return new_array
     
     def are_lolims(self):
-        new_array = np.empty(0, bool)
-        for x in self.flat:
-            new_array = np.append(new_array, x.is_lolim)
-        new_array = new_array.reshape(self.shape)
+        new_array = (np.array([x.is_lolim for x in self.flat])
+                     .reshape(self.shape))
         return new_array
 
     def are_uplims(self):
-        new_array = np.empty(0, bool)
-        for x in self.flat:
-            new_array = np.append(new_array, x.is_uplim)
-        new_array = new_array.reshape(self.shape)
+        new_array = (np.array([x.is_uplim for x in self.flat])
+                     .reshape(self.shape))
         return new_array
 
     def are_ranges(self):
-        new_array = np.empty(0, bool)
-        for x in self.flat:
-            new_array = np.append(new_array, x.is_range)
-        new_array = new_array.reshape(self.shape)
+        new_array = (np.array([x.is_range for x in self.flat])
+                     .reshape(self.shape))
         return new_array 
     
     def domains(self):
-        new_array = np.empty(0, bool)
-        for x in self.flat:
-            new_array = np.append(new_array, x.domain)
-        new_array = new_array.reshape([*self.shape,2])
+        new_array = (np.array([x.domain for x in self.flat])
+                     .reshape([*self.shape,2]).transpose())
         return new_array 
     
     def are_lims(self):
-        new_array = np.empty(0, bool)
-        for x in self.flat:
-            new_array = np.append(new_array, x.is_lim())
-        new_array = new_array.reshape(self.shape)
+        new_array = (np.array([x.is_lim() for x in self.flat])
+                     .reshape(self.shape))
         return new_array 
     
     def are_intervs(self):
-        new_array = np.empty(0, bool)
-        for x in self.flat:
-            new_array = np.append(new_array, x.is_interv())
-        new_array = new_array.reshape(self.shape)
+        new_array = (np.array([x.is_interv() for x in self.flat])
+                     .reshape(self.shape))
         return new_array
+    
+    def are_centrs(self):
+        new_array = (np.array([x.is_centr() for x in self.flat])
+                     .reshape(self.shape))
+        return new_array
+    
+    def centers(self):
+        new_array = (np.array([x.center() for x in self.flat])
+                     .reshape(self.shape))
+        return new_array    
 
     def rel_uncs(self):
-        new_array = np.empty(0, float)
-        for x in self.flat:
-            new_array = np.append(new_array, x.rel_unc())
-        new_array = new_array.reshape([*self.shape,2]).transpose()
+        new_array = (np.array([x.rel_unc() for x in self.flat])
+                     .reshape([*self.shape,2]).transpose())
         return new_array
     
     def signals_noises(self):
-        new_array = np.empty(0, float)
-        for x in self.flat:
-            new_array = np.append(new_array, x.signal_noise())
-        new_array = new_array.reshape([*self.shape,2]).transpose()
+        new_array = (np.array([x.signal_noise() for x in self.flat])
+                     .reshape([*self.shape,2]).transpose())
         return new_array
     
     def ampls(self):
-        new_array = np.empty(0, float)
-        for x in self.flat:
-            new_array = np.append(new_array, x.ampl())
-        new_array = new_array.reshape([*self.shape,2]).transpose()
+        new_array = (np.array([x.ampls() for x in self.flat])
+                     .reshape([*self.shape,2]).transpose())
         return new_array
     
     def rel_ampls(self):
-        new_array = np.empty(0, float)
-        for x in self.flat:
-            new_array = np.append(new_array, x.rel_ampl())
-        new_array = new_array.reshape([*self.shape,2]).transpose()
+        new_array = (np.array([x.rel_ampls() for x in self.flat])
+                     .reshape([*self.shape,2]).transpose())
         return new_array
     
     def prop_factors(self):
-        new_array = np.empty(0, float)
-        for x in self.flat:
-            new_array = np.append(new_array, x.prop_factor)
-        new_array = new_array.reshape(self.shape)
+        new_array = (np.array([x.prop_factor() for x in self.flat])
+                     .reshape(self.shape))
         return new_array
     
     def intervals(self, sigmas=3.):
-        new_array = np.empty(0, float)
-        for x in self.flat:
-            new_array = np.append(new_array, x.interval(sigmas))
-        new_array = new_array.reshape([*self.shape,2]).transpose()
+        new_array = (np.array([x.interval() for x in self.flat])
+                     .reshape([*self.shape,2]).transpose())
         return new_array
     
     def set_params(self, params):
@@ -1171,25 +1189,9 @@ class RichArray(np.ndarray):
     def latex(self, dollars=True, mult_symbol=defaultparams['multiplication '
                                   +'symbol for scientific notation in LaTeX']):
         """Display the values of the rich array in LaTeX math mode."""
-        new_array = np.empty(0, str)
-        for x in self.flat:
-            new_array = np.append(new_array, x.latex(dollars, mult_symbol))
-        new_array = new_array.reshape(self.shape)
+        new_array = (np.array([x.latex(dollars, mult_symbol) for x in self.flat])
+                     .reshape(self.shape))
         return new_array
-
-    def check_limits(self, sigmas=3.):
-        """Autodetect upper/lower limits."""
-        new_array = np.empty(0, RichArray)
-        for x in self.flat:
-            x.check_limit(sigmas)
-            new_array = np.append(new_array, x)
-        new_array = new_array.reshape(self.shape)
-        return new_array
-    
-    def check_intervals(self):
-        """Autodetect intervals."""
-        for x in self.flat:
-            x.check_interval()
     
     def set_lims_factor(self, c=4.):
         """Set uncertainties of limits with respect to central values."""
@@ -1280,11 +1282,19 @@ class RichDataFrame(pd.DataFrame):
                     params[param_name] = {}
                     for col in self:
                         params[param_name][col] = default_param
-        for i,col in enumerate(params):
-            for param_name in ['domain', 'num_sf', 'min_exp']:
-                if param_name in params and col in params[param_name]:
-                    for j in range(len(col)):
-                        self[col][j].domain = params[param_name]
+        for col in self:
+            num_rows = len(self[col])
+            is_rich_value = True if type(self[col][0]) is RichValue else False
+            if is_rich_value:
+                if 'domain' in params and col in params['domain']:
+                    for i in range(num_rows):
+                        self[col][i].domain = params['domain'][col]
+                if 'num_sf' in params and col in params['num_sf']:
+                    for i in range(num_rows):
+                        self[col][i].num_sf = params['num_sf'][col]
+                if 'min_exp' in params and col in params['min_exp']:
+                    for i in range(num_rows):
+                        self[col][i].min_exp = params['min_exp'][col]
     
     def create_column(self, function, columns, **kwargs):
         """
@@ -1426,6 +1436,125 @@ class RichDataFrame(pd.DataFrame):
     def __rpow__(self, other):
         return RichDataFrame(other ** self)
 
+def add_two_rich_values(x, y):
+    """
+    Sum two rich values to get a new one.
+    
+    Parameters
+    ----------
+    x : rich value
+        One rich value.
+    y : rich value
+        Other rich value.
+        
+    Returns
+    -------
+    z : rich value
+        New rich value
+    """
+    num_sf = max(x.num_sf, y.num_sf)
+    min_exp = min(x.min_exp, y.min_exp)
+    domain = [x.domain[0] + y.domain[0], x.domain[1] + y.domain[1]]
+    sigmas = defaultparams['limit factor to use approximate '
+                           + 'uncertainty propagation']
+    if (not (x.is_interv() or y.is_interv())
+            and min(x.rel_ampl()) > sigmas and min(y.rel_ampl())) > sigmas:
+        z = x.main + y.main
+        dz = (np.array(x.unc)**2 + np.array(y.unc)**2)**0.5
+        z = RichValue(z, dz, domain=domain)
+    else:
+        z = function_with_rich_values(lambda a,b: a+b, [x, y], domain=domain,
+                                      is_vectorizable=True)
+    z.num_sf = num_sf
+    z.min_exp = min_exp
+    return z
+
+def multiply_two_rich_values(x, y):
+    """
+    Multiply two rich values to get a new one.
+    
+    Parameters
+    ----------
+    x : rich value
+        One rich value.
+    y : rich value
+        Other rich value.
+        
+    Returns
+    -------
+    z : rich value
+        New rich value
+    """
+    num_sf = max(x.num_sf, y.num_sf)
+    min_exp = min(x.min_exp, y.min_exp)
+    with np.errstate(all='ignore'):
+        domain_combs = [x.domain[0] * y.domain[0], x.domain[0] * y.domain[1],
+                        x.domain[1] * y.domain[0], x.domain[1] * y.domain[1]]
+    domain1, domain2 = min(domain_combs), max(domain_combs)
+    domain1 = (np.nan_to_num(domain1, nan=-np.inf) if np.isnan(domain1)
+               else domain1)
+    domain2 = (np.nan_to_num(domain2, nan=np.inf) if np.isnan(domain2)
+               else domain2)
+    domain = [domain1, domain2]
+    sigmas = defaultparams['limit factor to use approximate '
+                           + 'uncertainty propagation']
+    if (not (x.is_interv() or y.is_interv())
+         and x.prop_factor() > sigmas and y.prop_factor() > sigmas):
+        z = x.main * y.main
+        dx, dy = np.array(x.unc), np.array(y.unc)
+        # dz = z * ((dx/x.main)**2 + (dy/y.main)**2)**0.5
+        dz = (dx**2 * dy**2 + dx**2 * y.main**2 + dy**2 * x.main**2)**0.5
+        z = RichValue(z, dz, domain=domain)
+    else:
+        z = function_with_rich_values(lambda a,b: a*b, [x, y], domain=domain,
+                                      is_vectorizable=True)
+    z.num_sf = num_sf
+    z.min_exp = min_exp
+    return z
+
+def divide_two_rich_values(x, y):
+    """
+    Divide two rich values to get a new one.
+    
+    Parameters
+    ----------
+    x : rich value
+        One rich value.
+    y : rich value
+        Other rich value.
+        
+    Returns
+    -------
+    z : rich value
+        New rich value
+    """
+    num_sf = max(x.num_sf, y.num_sf)
+    min_exp = min(x.min_exp, y.min_exp)
+    with np.errstate(all='ignore'):
+        domain_combs = [x.domain[0] * y.domain[0], x.domain[0] * y.domain[1],
+                        x.domain[1] * y.domain[0], x.domain[1] * y.domain[1]]
+    domain1, domain2 = min(domain_combs), max(domain_combs)
+    domain1 = -np.inf if np.isinf(domain1) else domain1
+    domain2 = np.inf if np.isinf(domain1) else domain2
+    domain = [domain1, domain2]
+    sigmas = defaultparams['limit factor to use approximate '
+                           + 'uncertainty propagation']
+    if (not (x.is_interv() or y.is_interv()) and 0 not in [x.main, y.main]
+         and x.prop_factor() > sigmas and y.prop_factor() > sigmas):
+        z = x.main / y.main
+        dx, dy = np.array(x.unc), np.array(y.unc)
+        dz = z * ((dx/x.main)**2 + (dy/y.main)**2)**0.5
+        z = RichValue(z, dz, domain=domain)
+    else:
+        sigmas = (np.inf if y.main == 0 else
+                  defaultparams['limit factor to use approximate '
+                                + 'uncertainty propagation'])
+        z = function_with_rich_values(lambda a,b: a/b, [x, y], domain=domain,
+                                  is_vectorizable=True, sigmas=sigmas)
+    z.num_sf = num_sf
+    z.min_exp = min_exp
+    return z
+
 def rich_value(text, domain=None):
     """
     Convert the input text to a rich value.
@@ -1536,7 +1665,7 @@ def rich_value(text, domain=None):
     return y
 
 
-def rich_array(array, domain=None, check_limits=True, check_intervals=False):
+def rich_array(array, domain=None):
     """
     Convert the input array to a rich array.
 
@@ -1545,16 +1674,9 @@ def rich_array(array, domain=None, check_limits=True, check_intervals=False):
     array : array / list (str)
         Input array containing text strings representing rich values.
     domain : list (float), optional
-        The domain of the rich value, that is, the minimum and maximum
-        values that it can take. The default is [-np.inf, np.inf].
-    check_limits : bool, optional
-        If True, if any of the 1-sigma interval bounds equals or exceeds the
-        domain, the value will be considered an upper/lower limit, for every
-        each of the array. The default is True.
-    check_intervals : bool, optional
-        If True, if the maximum uncertainty is greater than the distance to the
-        closest domain edges, the value will be considered a finite interval,
-        for each entry of the array. The default is False.
+        The domain of al the entries of the rich array, that is, the minimum
+        and maximum values that it can take. If not given, the original domain
+        of each entry of the array will be preserved.
 
     Returns
     -------
@@ -1562,31 +1684,32 @@ def rich_array(array, domain=None, check_limits=True, check_intervals=False):
         Resulting rich array.
     """
     array = np.array(array)
-    mains, uncs, are_lolims, are_uplims, are_ranges = [], [], [], [], []
+    mains, uncs, are_lolims, are_uplims, are_ranges, domains = \
+        [], [], [], [], [], []
     for element in array.flat:
         x = (element if type(element) is RichValue
              else rich_value(element, domain))
-        if check_limits:
-            x.check_limit()
-        if check_intervals:
-            x.check_interval()
         mains += [x.main]
         uncs += [x.unc]
         are_lolims += [x.is_lolim]
         are_uplims += [x.is_uplim]
         are_ranges += [x.is_range]
+        domains += [x.domain]
     mains = np.array(mains).reshape(array.shape)
     uncs = np.array(uncs)
     uncs = np.array([uncs[:,0].reshape(array.shape).tolist(),
-                     uncs[:,1].reshape(array.shape).tolist()]).transpose()
+                     uncs[:,1].reshape(array.shape).tolist()])
     are_lolims = np.array(are_lolims).reshape(array.shape)
     are_uplims = np.array(are_uplims).reshape(array.shape)
     are_ranges = np.array(are_ranges).reshape(array.shape)
+    domains = np.array(domains)
+    domains = np.array([domains[:,0].reshape(array.shape).tolist(),
+                        domains[:,1].reshape(array.shape).tolist()])
     new_array = RichArray(mains, uncs, are_lolims, are_uplims, are_ranges,
-                          domain)
+                          domains)
     return new_array
 
-def rich_dataframe(df, domains=None, check_limits=True, check_intervals=False):
+def rich_dataframe(df, domains=None):
     """
     Convert the values of the input dataframe of text strings to rich values.
 
@@ -1595,18 +1718,8 @@ def rich_dataframe(df, domains=None, check_limits=True, check_intervals=False):
     df : dataframe (str)
         Input dataframe which contains text strings formatted as rich values.
     domains : dict (list (float)), optional
-        Dictionary containing this value for each column of the dataframe.
-        The domain of the rich value, that is, the minimum and maximum
-        values that it can take. By default, for each column, it will be the
-        value for the first entry if it is a rich value, and [-np.inf, np.inf]
-        if not.
-    check_limits : bool, optional
-        If True, if any of the 1-sigma interval bounds equals or exceeds the
-        domain, the value will be considered as an upper/lower limit.
-    check_intervals : bool, optional
-        If True, if the maximum uncertainty is greater than the distance to the
-        closest domain edges, the value will be considered a finite interval,
-        for each entry of the array. The default is False.
+        Dictionary containing the domain for each column of the dataframe.
+        Instead, a common domain can be directly specified for all the columns.
 
     Returns
     -------
@@ -1616,21 +1729,12 @@ def rich_dataframe(df, domains=None, check_limits=True, check_intervals=False):
     df = pd.DataFrame(df)
     if type(domains) is not dict:
         domains = {col: domains for col in df}
-    for col in df:
-        is_number = True
-        text = str(df[col][0])
-        for char in text.replace(' e', ''):
-            if char.isalpha():
-                is_number = False
-                break
-        if is_number:
-            domain = domains[col] if col in domains else None
-            x = rich_value(text, domain)
     new_df = copy.copy(df)
     for i,row in new_df.iterrows():
         for col in new_df:
             is_rich_value = (True if type(new_df.at[i,col]) is RichValue
                              else False)
+            domain = domains[col] if col in domains else None
             if is_rich_value:
                 x = new_df.at[i,col]
             else:
@@ -1641,16 +1745,88 @@ def rich_dataframe(df, domains=None, check_limits=True, check_intervals=False):
                         is_number = False
                         break
                 if is_number:
-                    domain = domains[col] if col in domains else None
-                    x = rich_value(text, domain)
+                    x = rich_value(new_df.at[i,col], domain)
             if is_rich_value or is_number:
-                if check_limits:
-                    x.check_limit()
-                if check_intervals:
-                    x.check_interval()
-            new_df.at[i,col] = x
+                new_df.at[i,col] = x
     new_df = RichDataFrame(new_df)
     return new_df
+
+def bounded_gaussian(x, m=0., s=1., a=10., norm=False):
+    """
+    Bounded gaussian function.
+
+    Parameters
+    ----------
+    x : array (float)
+        Independent variable.
+    m : float, optional
+        Median of the curve. The default is 0.
+    s : float, optional
+        Width of the curve (similar to the standard deviation).
+        The default is 1.
+    a : float, optional
+        Amplitude of the curve (distance from the median to the domain edges).
+        The default is 10.
+    norm : bool, optional
+        If True, the curve will be normalized. The default is False.
+
+    Returns
+    -------
+    y : array (float)
+        Resulting array.
+    """
+    y = np.zeros(len(x))
+    s_ = s * np.interp(a/s, width_factor[0,:], width_factor[1,:],
+                       right=1.)
+    x_ = (4/math.tau * a * np.tan(math.tau/4 * (x-m)/a))
+    cond = np.greater(x, m-a) & np.less(x, m+a)
+    y[cond] = np.exp(-x_[cond]**2/(2*s_**2))
+    if norm:
+        dm = min(a, 6*s)
+        x1, x2 = m - dm, m + dm
+        xl = np.linspace(x1, x2, int(4e3))
+        yl = bounded_gaussian(xl, m, s, a)
+        y /= np.trapz(yl, xl).sum()
+    return y
+
+def mirrored_loggaussian(x, m=0., s=1., a=10., norm=False):
+    """
+    Mirrored log-gaussian function.
+
+    Parameters
+    ----------
+    x : array (float)
+        Independent variable.
+    m : float, optional
+        Median of the curve. The default is 0.
+    s : float, optional
+        Uncertainty (defines the 1 sigma confidence interval).
+        The default is 1.
+    a : float, optional
+        Amplitude of the curve (distance to the domain edges).
+        The default is 10.
+    norm : bool, optional
+        If True, the curve will be normalized. The default is False.
+
+    Returns
+    -------
+    y : array (float)
+        Resulting array.
+    """
+    y = np.zeros(len(x))
+    m_ = np.log(a)
+    s_ = np.log(a-s) - m_
+    x_ = x - (m-a)
+    cond = np.greater(x, m-a) & np.less(x, m)
+    y[cond] = (1 / x_[cond]
+               * np.exp(-0.5*(np.log(x_[cond]) - m_)**2 / s_**2))
+    x_ = x - m
+    cond = np.greater(x, m) & np.less(x, m+a)
+    y[cond] = (1 / x_[cond][::-1]
+               * np.exp(-0.5*(np.log(x_[cond][::-1]) - m_)**2 / s_**2))
+    if norm:
+        y /= s_ * math.tau**0.5 
+    return y
 
 def general_pdf(x, loc=0, scale=1, bounds=None, norm=False):
     """
@@ -1869,7 +2045,7 @@ def loguniform_distribution(low=-1, high=1, size=1,
             x = np.append(x, [x1, x2])
     return x
 
-def main_and_uncs(distr, function=np.median, interval=68.27, fraction=1.):
+def center_and_uncs(distr, function=np.median, interval=68.27, fraction=1.):
     """
     Return the central value and uncertainties of the input distribution.
 
@@ -1922,127 +2098,8 @@ def main_and_uncs(distr, function=np.median, interval=68.27, fraction=1.):
     uncs = [unc1, unc2]
     return main, uncs
 
-def add_two_rich_values(x, y):
-    """
-    Sum two rich values to get a new one.
-    
-    Parameters
-    ----------
-    x : rich value
-        One rich value.
-    y : rich value
-        Other rich value.
-        
-    Returns
-    -------
-    z : rich value
-        New rich value
-    """
-    num_sf = max(x.num_sf, y.num_sf)
-    min_exp = min(x.min_exp, y.min_exp)
-    domain = [x.domain[0] + y.domain[0], x.domain[1] + y.domain[1]]
-    sigmas = defaultparams['limit factor to use approximate '
-                           + 'uncertainty propagation']
-    if (not (x.is_interv() or y.is_interv())
-            and min(x.rel_ampl()) > sigmas and min(y.rel_ampl())) > sigmas:
-        z = x.main + y.main
-        dz = (np.array(x.unc)**2 + np.array(y.unc)**2)**0.5
-        z = RichValue(z, dz, domain=domain)
-    else:
-        z = function_with_rich_values(lambda a,b: a+b, [x, y], domain=domain,
-                                      is_function_vectorizable=True)
-    z.num_sf = num_sf
-    z.min_exp = min_exp
-    return z
-
-def multiply_two_rich_values(x, y):
-    """
-    Multiply two rich values to get a new one.
-    
-    Parameters
-    ----------
-    x : rich value
-        One rich value.
-    y : rich value
-        Other rich value.
-        
-    Returns
-    -------
-    z : rich value
-        New rich value
-    """
-    num_sf = max(x.num_sf, y.num_sf)
-    min_exp = min(x.min_exp, y.min_exp)
-    with np.errstate(all='ignore'):
-        domain_combs = [x.domain[0] * y.domain[0], x.domain[0] * y.domain[1],
-                        x.domain[1] * y.domain[0], x.domain[1] * y.domain[1]]
-    domain1, domain2 = min(domain_combs), max(domain_combs)
-    domain1 = (np.nan_to_num(domain1, nan=-np.inf) if np.isnan(domain1)
-               else domain1)
-    domain2 = (np.nan_to_num(domain2, nan=np.inf) if np.isnan(domain2)
-               else domain2)
-    domain = [domain1, domain2]
-    sigmas = defaultparams['limit factor to use approximate '
-                           + 'uncertainty propagation']
-    if (not (x.is_interv() or y.is_interv())
-         and x.prop_factor() > sigmas and y.prop_factor() > sigmas):
-        z = x.main * y.main
-        dx, dy = np.array(x.unc), np.array(y.unc)
-        # dz = z * ((dx/x.main)**2 + (dy/y.main)**2)**0.5
-        dz = (dx**2 * dy**2 + dx**2 * y.main**2 + dy**2 * x.main**2)**0.5
-        z = RichValue(z, dz, domain=domain)
-    else:
-        z = function_with_rich_values(lambda a,b: a*b, [x, y], domain=domain,
-                                      is_function_vectorizable=True)
-    z.num_sf = num_sf
-    z.min_exp = min_exp
-    return z
-
-def divide_two_rich_values(x, y):
-    """
-    Divide two rich values to get a new one.
-    
-    Parameters
-    ----------
-    x : rich value
-        One rich value.
-    y : rich value
-        Other rich value.
-        
-    Returns
-    -------
-    z : rich value
-        New rich value
-    """
-    num_sf = max(x.num_sf, y.num_sf)
-    min_exp = min(x.min_exp, y.min_exp)
-    with np.errstate(all='ignore'):
-        domain_combs = [x.domain[0] * y.domain[0], x.domain[0] * y.domain[1],
-                        x.domain[1] * y.domain[0], x.domain[1] * y.domain[1]]
-    domain1, domain2 = min(domain_combs), max(domain_combs)
-    domain1 = -np.inf if np.isinf(domain1) else domain1
-    domain2 = np.inf if np.isinf(domain1) else domain2
-    domain = [domain1, domain2]
-    sigmas = defaultparams['limit factor to use approximate '
-                           + 'uncertainty propagation']
-    if (not (x.is_interv() or y.is_interv()) and 0 not in [x.main, y.main]
-         and x.prop_factor() > sigmas and y.prop_factor() > sigmas):
-        z = x.main / y.main
-        dx, dy = np.array(x.unc), np.array(y.unc)
-        dz = z * ((dx/x.main)**2 + (dy/y.main)**2)**0.5
-        z = RichValue(z, dz, domain=domain)
-    else:
-        sigmas = (np.inf if y.main == 0 else
-                  defaultparams['limit factor to use approximate '
-                                + 'uncertainty propagation'])
-        z = function_with_rich_values(lambda a,b: a/b, [x, y], domain=domain,
-                                  is_function_vectorizable=True, sigmas=sigmas)
-    z.num_sf = num_sf
-    z.min_exp = min_exp
-    return z
-
 def distr_with_rich_values(function, args, len_samples=None,
-                                  is_function_vectorizable=False):
+                                  is_vectorizable=False):
     """
     Same as function_with_rich_values, but just returns the final distribution.
     
@@ -2055,7 +2112,7 @@ def distr_with_rich_values(function, args, len_samples=None,
     if len_samples is None:
         len_samples = int(len(args)**0.5 * defaultparams['size of samples'])
     args_distr = np.array([arg.sample(len_samples) for arg in args])
-    if is_function_vectorizable:
+    if is_vectorizable:
         new_distr = function(*args_distr)
     else:
         new_distr = np.array([function(*args_distr[:,i])
@@ -2063,8 +2120,8 @@ def distr_with_rich_values(function, args, len_samples=None,
     return new_distr
 
 def function_with_rich_values(
-        function, args, unc_function=None, is_function_vectorizable=False,
-        len_samples=None, domain=None,
+        function, args, unc_function=None, is_vectorizable=False,
+        len_samples=None, domain=None, consider_ranges=True,
         sigmas=defaultparams['limit factor to use approximate '
                                + 'uncertainty propagation'],
         use_sigma_combs=defaultparams['use 1-sigma combinations to '
@@ -2087,7 +2144,7 @@ def function_with_rich_values(
         Function to estimate the uncertainties, in case that error propagation
         can be used. The arguments should be the central values first and then
         the uncertainties, with the same order as in the input function.
-    is_function_vectorizable : bool, optional
+    is_vectorizable : bool, optional
         If True, the calculations of the function will be optimized making use
         of vectorization. The default is False.
     len_samples : int, optional
@@ -2096,6 +2153,9 @@ def function_with_rich_values(
     domain : list (float), optional
         Domain of the result. If not specified, it will be estimated
         automatically.
+    consider_ranges : bool, optional
+        If True, the resulting distribution could be interpreted as a constant
+        range of values.
     sigmas : float, optional
         Threshold to apply uncertainty propagation. The value is the distance
         to the bounds of the domain relative to the uncertainty.
@@ -2201,7 +2261,7 @@ def function_with_rich_values(
         
     if not any(np.isnan([arg.main for arg in args])):
         if output_size > 1:
-            is_function_vectorizable = False
+            is_vectorizable = False
         if domain is not None and not hasattr(domain[0], '__iter__'):
             domain = [domain]*output_size
         if unc_propagation:
@@ -2233,7 +2293,7 @@ def function_with_rich_values(
                        for k in range(output_size)]
         else:
             args_distr = np.array([arg.sample(len_samples) for arg in args])
-            if is_function_vectorizable:
+            if is_vectorizable:
                 new_distr = function(*args_distr)
             else:
                 new_distr = np.array([function(*args_distr[:,i])
@@ -2245,7 +2305,7 @@ def function_with_rich_values(
                 domain_args_distr = np.array(
                     [loguniform_distribution(*arg.domain, len_samples//4)
                      for arg in args])
-                if is_function_vectorizable:
+                if is_vectorizable:
                     domain_distr = function(*domain_args_distr)
                 else:
                     domain_distr = np.array([function(*domain_args_distr[:,i])
@@ -2266,7 +2326,7 @@ def function_with_rich_values(
                     y = y[k] if output_size > 1 else y
                     return y
                 rval_k = evaluate_distr(new_distr[:,k], domain_k, function_k,
-                    args, len_samples, is_function_vectorizable,
+                    args, len_samples, is_vectorizable, consider_ranges,
                     lims_fraction, num_reps_lims, zero_log, inf_log)
                 main_k = (rval_k.main if not rval_k.is_interv()
                             else rval_k.interval())
@@ -2295,7 +2355,7 @@ def function_with_rich_values(
     return output
 
 def evaluate_distr(distr, domain=[-np.inf,np.inf], function=None, args=None,
-        len_samples=int(1e4), is_function_vectorizable=False,
+        len_samples=int(1e4), is_vectorizable=False, consider_ranges=True,
         lims_fraction=defaultparams['fraction of the central value '
                                     + 'for upper/lower limits'],
         num_reps_lims=defaultparams['number of repetitions to estimate'
@@ -2355,7 +2415,7 @@ def evaluate_distr(distr, domain=[-np.inf,np.inf], function=None, args=None,
     distr = np.array(distr)
     domain1, domain2 = domain if domain is not None else [-np.inf, np.inf]
     x1, x2 = np.min(distr), np.max(distr)
-    main, unc = main_and_uncs(distr)
+    main, unc = center_and_uncs(distr)
     ord_range_1s = magnitude_order_range([main-unc[0], main+unc[1]])
     ord_range_x = magnitude_order_range([x1, x2])
     distr = distr[np.isfinite(distr)]
@@ -2379,7 +2439,7 @@ def evaluate_distr(distr, domain=[-np.inf,np.inf], function=None, args=None,
             for i in range(num_reps_lims):
                 args_distr = np.array([arg.sample(len_samples)
                                        for arg in args])
-                if is_function_vectorizable:
+                if is_vectorizable:
                     distr = function(*args_distr)
                 else:
                     distr = np.array([function(*args_distr[:,j])
@@ -2416,7 +2476,7 @@ def evaluate_distr(distr, domain=[-np.inf,np.inf], function=None, args=None,
             for i in range(num_reps_lims):
                 args_distr = np.array([arg.sample(len_samples)
                                        for arg in args])
-                if is_function_vectorizable:
+                if is_vectorizable:
                     distr = function(*args_distr)
                 else:
                     distr = np.array([function(*args_distr[:,j])
@@ -2431,6 +2491,10 @@ def evaluate_distr(distr, domain=[-np.inf,np.inf], function=None, args=None,
         unc = [0, 0]
     
     z = RichValue(main, unc, domain=domain)
+    
+    if not consider_ranges and z.is_range:
+        main, unc = center_and_uncs(distr)
+        z = RichValue(main, unc, domain=domain)
             
     return z
 
@@ -2543,91 +2607,6 @@ def rich_fmean(array, function=lambda x: x, inverse_function=lambda x: x,
     y = function_with_rich_arrays(fmean_function, [array, weights], **kwargs)
     return y
 
-def bounded_gaussian(x, m=0., s=1., a=10., norm=False):
-    """
-    Bounded gaussian function.
-
-    Parameters
-    ----------
-    x : array (float)
-        Independent variable.
-    m : float, optional
-        Median of the curve. The default is 0.
-    s : float, optional
-        Width of the curve (similar to the standard deviation).
-        The default is 1.
-    a : float, optional
-        Amplitude of the curve (distance from the median to the domain edges).
-        The default is 10.
-    norm : bool, optional
-        If True, the curve will be normalized. The default is False.
-
-    Returns
-    -------
-    y : array (float)
-        Resulting array.
-    """
-    y = np.zeros(len(x))
-    s_ = s * np.interp(a/s, width_factor[0,:], width_factor[1,:],
-                       right=1.)
-    x_ = (4/math.tau * a * np.tan(math.tau/4 * (x-m)/a))
-    cond = np.greater(x, m-a) & np.less(x, m+a)
-    y[cond] = np.exp(-x_[cond]**2/(2*s_**2))
-    if norm:
-        dm = min(a, 6*s)
-        x1, x2 = m - dm, m + dm
-        xl = np.linspace(x1, x2, int(4e3))
-        yl = bounded_gaussian(xl, m, s, a)
-        y /= np.trapz(yl, xl).sum()
-    return y
-
-def mirrored_loggaussian(x, m=0., s=1., a=10., norm=False):
-    """
-    Mirrored log-gaussian function.
-
-    Parameters
-    ----------
-    x : array (float)
-        Independent variable.
-    m : float, optional
-        Median of the curve. The default is 0.
-    s : float, optional
-        Uncertainty (defines the 1 sigma confidence interval).
-        The default is 1.
-    a : float, optional
-        Amplitude of the curve (distance to the domain edges).
-        The default is 10.
-    norm : bool, optional
-        If True, the curve will be normalized. The default is False.
-
-    Returns
-    -------
-    y : array (float)
-        Resulting array.
-    """
-    y = np.zeros(len(x))
-    m_ = np.log(a)
-    s_ = np.log(a-s) - m_
-    x_ = x - (m-a)
-    cond = np.greater(x, m-a) & np.less(x, m)
-    y[cond] = (1 / x_[cond]
-               * np.exp(-0.5*(np.log(x_[cond]) - m_)**2 / s_**2))
-    x_ = x - m
-    cond = np.greater(x, m) & np.less(x, m+a)
-    y[cond] = (1 / x_[cond][::-1]
-               * np.exp(-0.5*(np.log(x_[cond][::-1]) - m_)**2 / s_**2))
-    if norm:
-        y /= s_ * math.tau**0.5 
-    return y
-
-def log10(x):
-    """
-    Decimal logarithm from NumPy but including x = 0.
-    """
-    with np.errstate(divide='ignore'):
-        y = np.log10(x)
-    return y
-
 def errorbar(x, y, lims_factor=None, **kwargs):
     """
     Plot the input rich arrays (y versus x) with Matplotlib.
@@ -2683,7 +2662,7 @@ def errorbar(x, y, lims_factor=None, **kwargs):
     color = set_kwarg('color', 'gray')
     ecolor = set_kwarg('ecolor', 'black')
     fmt = set_kwarg('fmt', '.')
-    cond = ~(xc.are_ranges() | yc.are_ranges())
+    cond = ~ (xc.are_ranges() | yc.are_ranges())
     plot = plt.errorbar(xc.mains()[cond], yc.mains()[cond],
                 xerr=xc.uncs()[:,cond], yerr=yc.uncs()[:,cond],
                 uplims=yc.are_uplims()[cond], lolims=yc.are_lolims()[cond],
@@ -2710,7 +2689,7 @@ def errorbar(x, y, lims_factor=None, **kwargs):
     return plot
 
 def point_fit(y, function, guess, num_samples=3000,
-              loss=lambda a,b: (a-b)**2, **kwargs):
+              loss=lambda a,b: (a-b)**2, lim_loss_factor=4., **kwargs):
     """
     Perform a fit of the input points (y) with respect to the given function.
 
@@ -2730,6 +2709,10 @@ def point_fit(y, function, guess, num_samples=3000,
         Function that defines the error between two numbers: a sample of a rich
         value (first argument) and a numeric prediction of it (second
         argument). The default is the squared error.
+    lim_loss_factor : float, optional
+        Factor to enlarge the loss if the rich value is not a centered value
+        and the prediction falls outside the interval of possible values of the
+        rich value.
     kwargs : arguments, optional
         Keyword arguments of SciPy's function 'minimize'.
 
@@ -2773,7 +2756,8 @@ def point_fit(y, function, guess, num_samples=3000,
                 yl = (y_j if y1 <= y_j <= y2
                       else [y1, y2][np.argmin([abs(y1-y_j), abs(y2-y_j)])])
                 ylims[j] = yl
-            error += sum(loss(ylims, y_cond))
+                factor = 1. if y1 <= y_j <= y2 else lim_loss_factor
+            error += sum(factor*loss(ylims, y_cond))
         error /= len(ys)
         return error
     losses = []
@@ -2801,7 +2785,7 @@ def point_fit(y, function, guess, num_samples=3000,
     return result
 
 def curve_fit(x, y, function, guess, num_samples=3000,
-              loss=lambda a,b: (a-b)**2, **kwargs):
+              loss=lambda a,b: (a-b)**2, lim_loss_factor=4., **kwargs):
     """
     Perform a fit of y over x (arrays) with respect to the given function.
 
@@ -2824,6 +2808,10 @@ def curve_fit(x, y, function, guess, num_samples=3000,
         Function that defines the error between two numbers: a sample of a rich
         value (first argument) and a numeric prediction of it (second
         argument). The default is the squared error.
+    lim_loss_factor : float, optional
+        Factor to enlarge the loss if the rich value is not a centered value
+        and the prediction falls outside the interval of possible values of the
+        rich value.
     **kwargs : arguments
         Keyword arguments of SciPy's function 'minimize'.
 
@@ -2874,7 +2862,8 @@ def curve_fit(x, y, function, guess, num_samples=3000,
                 yl = (y_j if y1 <= y_j <= y2
                       else [y1, y2][np.argmin([abs(y1-y_j), abs(y2-y_j)])])
                 ylims[j] = yl
-            error += sum(loss(ylims, y_condxy))
+                factor = 1. if y1 <= y_j <= y2 else lim_loss_factor
+            error += sum(factor*loss(ylims, y_condxy))
         if num_intervs_x > 0:
             for xi, yi in zip(xlims_sample, ylims_sample):
                 yi_ = [function(xij, *params) for xij in xi]
@@ -2883,7 +2872,8 @@ def curve_fit(x, y, function, guess, num_samples=3000,
                 for yij in yi:
                     yl = (yij if y1 <= yij <= y2
                           else [y1, y2][np.argmin([abs(y1-yij), abs(y2-yij)])])
-                    error_ij = loss(yl, yij)
+                    factor = 1. if y1 <= yij <= y2 else lim_loss_factor
+                    error_ij = factor*loss(yl, yij)
                     error_i += [error_ij]
                     if error_ij == 0:
                         break
@@ -2915,6 +2905,12 @@ def curve_fit(x, y, function, guess, num_samples=3000,
     result = {'parameters': params_fit, 'samples': samples,
               'loss': losses, 'fails': num_fails}
     return result
+   
+def log10(x):
+    """Decimal logarithm from NumPy but including x = 0."""
+    with np.errstate(divide='ignore'):
+        y = np.log10(x)
+    return y
     
 # Function abbreviations.
 rval = rich_value
@@ -2926,8 +2922,7 @@ array_function = function_with_rich_arrays
 # Empirical relation needed for the function 'bounded_gaussian'.
 # The first column is the relative amplitude (amplitude divided by the
 # uncertainty). The second value is the width of the bounded gaussian.
-width_factor = np.array(
-    [
+width_factor = np.array([
     [1.5978798107863545, 8.837825688232524],
     [1.6005670566153853, 8.675160051256942],
     [1.6009222672360193, 8.653998717097087],
@@ -4449,6 +4444,4 @@ width_factor = np.array(
     [99.11790891292459, 1.0002857305652064],
     [99.39838520731075, 1.0002819287098141],
     [99.67965517210996, 1.0002781196351063],
-    [99.96172105319029, 1.0002743040647095]
-    ]
-).transpose()
+    [99.96172105319029, 1.0002743040647095]]).transpose()
