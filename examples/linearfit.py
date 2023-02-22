@@ -26,22 +26,22 @@ dispersion_x, dispersion_y = 0.6, 3.
 errorbar_x, errorbar_y = 0.9, 3.6
 x = rv.RichArray(np.random.uniform(0., 40., num_points),
                  [dispersion_x]*num_points)
-y = rv.RichArray(slope_true * x.centers() + offset_true,
+y = rv.RichArray(slope_true * x.mains() + offset_true,
                  [dispersion_y]*num_points)
 x = rv.RichArray(x.sample(1),
-                 np.abs(np.random.normal(errorbar_x, errorbar_x/4, num_points)))
+                np.abs(np.random.normal(errorbar_x, errorbar_x/4, num_points)))
 y = rv.RichArray(y.sample(1),
-                 np.abs(np.random.normal(errorbar_y, errorbar_y/4, num_points)))
-inds = np.argsort(x.centers())
+                np.abs(np.random.normal(errorbar_y, errorbar_y/4, num_points)))
+inds = np.argsort(x.mains())
 x = x[inds]
 y = y[inds]
 
 x[0].is_uplim = True
-x[0].center += 20*x[0].unc[1]
+x[0].main += 20*x[0].unc[1]
 y[20].is_uplim = True
-y[20].center += 16*y[20].unc[1]
+y[20].main += 16*y[20].unc[1]
 y[-1].is_range = True
-x[-1].center += 1*y[-1].unc[1]
+x[-1].main += 1*y[-1].unc[1]
 y[-1].unc = [10*y[-1].unc[0], 5*y[1].unc[1]]
 data = pd.DataFrame({'x': x, 'y': y})
 data.to_csv('linear-data.csv', index=False)
@@ -73,7 +73,7 @@ xlims = plt.xlim()
 ylims = plt.ylim()
 if plot_fit:
     x_ = np.linspace(0, xlims[1], 4)
-    plt.plot(x_, slope.center * x_ + offset.center, color=color_fit, lw=1,
+    plt.plot(x_, slope.main * x_ + offset.main, color=color_fit, lw=1,
              label='median fit')
     plt.plot([], [], alpha=0, label='slope: {}'.format(slope.latex()))
     plt.plot([], [], alpha=0, label='offset: {}'.format(offset.latex()))
