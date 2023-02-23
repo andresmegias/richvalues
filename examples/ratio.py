@@ -26,9 +26,9 @@ data = rv.rich_dataframe(data, domains=[0,np.inf])
 
 # Calculation of the ratio of the two columns.
 t1 = time.time()
-use_new_column = False
-if use_new_column:
-    ratio = data.new_column(lambda a,b: a/b, ['HCCCN','CH3CN'],
+use_create_column = False
+if use_create_column:
+    ratio = data.create_column(lambda a,b: a/b, ['HCCCN','CH3CN'],
                 unc_function= lambda a,b,da,db: a/b*((da/a)**2+(db/b)**2)**0.5,
                 domain=[0,np.inf], is_vectorizable=True)
 else:
