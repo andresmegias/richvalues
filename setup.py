@@ -5,10 +5,10 @@ with open('README.md', 'r') as file:
 
 setuptools.setup(
     name = 'richvalues',
-    version = '1.2.1',
+    version = '1.2.2',
     license = 'BSD-3-Clause',
     author = 'Andrés Megías Toledano',
-    description = 'Python library for dealing with uncertainties and upper/lower limits',
+    description = 'Python library for working with uncertainties and upper/lower limits',
     long_description = long_description,
     long_description_content_type = 'text/markdown',
     packages = setuptools.find_packages('./'),

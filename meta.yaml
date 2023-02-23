@@ -1,5 +1,5 @@
 {% set name = "richvalues" %}
-{% set version = "1.2.1" %}
+{% set version = "1.2.2" %}
 
 package:
   name: "{{ name|lower }}"
@@ -7,7 +7,7 @@ package:
 
 source:
   url: "https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/{{ name }}-{{ version }}.tar.gz"
-  sha256: a84f636bc683373601d7b0f28cc1714879bc13454cba4eab92d20e7751bd2679
+  sha256: dd10f5363ea915e570d5030e429087689519d39cac20fea4e6ff8e5697f4ed17
 
 build:
   number: 0
@@ -32,7 +32,7 @@ about:
   license: BSD-3-Clause
   license_family: BSD
   license_file: LICENSE
-  summary: "Python library for dealing with uncertainties and upper/lower limits"
+  summary: "Python library for working with uncertainties and upper/lower limits"
   doc_url: 
   dev_url: 
 
