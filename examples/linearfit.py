@@ -28,9 +28,9 @@ x = rv.RichArray(np.random.uniform(0., 40., num_points),
                  [dispersion_x]*num_points)
 y = rv.RichArray(slope_true * x.mains() + offset_true,
                  [dispersion_y]*num_points)
-x = rv.RichArray(x.sample(1),
+x = rv.RichArray(x.sample(),
                 np.abs(np.random.normal(errorbar_x, errorbar_x/4, num_points)))
-y = rv.RichArray(y.sample(1),
+y = rv.RichArray(y.sample(),
                 np.abs(np.random.normal(errorbar_y, errorbar_y/4, num_points)))
 inds = np.argsort(x.mains())
 x = x[inds]
