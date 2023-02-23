@@ -49,12 +49,12 @@ from scipy.stats import linregress
 defaultparams = {
     'number of significant figures': 1,
     'domain': [-np.inf, np.inf],
-    'size of samples': 10000,
+    'size of samples': int(1e4),
     'number of significant figures': 1,
     'limit for extra significant figure': 2.5,
     'minimum exponent for scientific notation': 4,
-    'signal-to-noise to define upper/lower limits': 2.,
-    'limit factor to use approximate uncertainty propagation': 20.,
+    'sigmas to define upper/lower limits': 2.,
+    'sigmas to use approximate uncertainty propagation': 20.,
     'use 1-sigma combinations to approximate uncertainty propagation': False,
     'fraction of the central value for upper/lower limits': 0.1,
     'number of repetitions to estimate upper/lower limits': 4,
@@ -62,7 +62,6 @@ defaultparams = {
     'decimal exponent to define infinity': 90.,
     'multiplication symbol for scientific notation in LaTeX': '\\cdot'
     }
-    
 
 def round_sf(x,
         n=defaultparams['number of significant figures'],
@@ -422,8 +421,7 @@ class RichValue():
         if not (is_lolim or is_uplim):
             is_range_domain = False
             if min(rel_ampl) <= 1.:
-                sigmas = defaultparams['signal-to-noise to define '
-                                       + 'upper/lower limits']
+                sigmas = defaultparams['sigmas to define upper/lower limits']
                 x1 = max(main - unc[0], domain[0])
                 x2 = min(main + unc[1], domain[1])
                 if x1 == domain[0] and x2 != domain[1]:
@@ -443,7 +441,7 @@ class RichValue():
                 else:
                     is_range = True
             if min(rel_ampl) <= 1. and is_range_domain:
-                main = np.mean(domain)
+                main = (domain[0] + domain[1]) / 2
                 unc = [(domain[1] - domain[0]) / 2] * 2
                 
         self.main = main
@@ -483,7 +481,7 @@ class RichValue():
     def rel_unc(self):
         """Relative uncertainties of the rich value"""
         m, s = self.main, self.unc
-        with np.errstate(divide='ignore'):
+        with np.errstate(divide='ignore', invalid='ignore'):
             runc = list(np.array(s) / abs(m))
         return runc
     
@@ -875,7 +873,7 @@ class RichValue():
         return new_rich_value
     
     def __pow__(self, other):
-        sigmas = defaultparams['limit factor to use approximate '
+        sigmas = defaultparams['sigmas to use approximate '
                                + 'uncertainty propagation']
         main = copy.copy(self.main)
         unc = copy.copy(self.unc)
@@ -959,12 +957,12 @@ class RichValue():
                 y[(x > x1) & (x < x2)] = 1 / (x2 - x1)
         return y
     
-    def sample(self, N=defaultparams['size of samples']):
+    def sample(self, len_sample=1):
         """Sample of the distribution corresponding to the rich value"""
         main = copy.copy(self.main)
         unc = copy.copy(self.unc)
         domain = copy.copy(self.domain)
-        N = int(N)
+        N = int(len_sample)
         is_finite_interv = (self.is_range
                             or self.is_uplim and np.isfinite(domain[0])
                             or self.is_lolim and np.isfinite(domain[1]))
@@ -989,11 +987,9 @@ class RichValue():
                     x1 += max(10**zero_log, abs(x1)*10**zero_log)
                     x2 -= max(10**zero_log, abs(x2)*10**zero_log)
                     x = np.linspace(x1, x2, N)
-                np.random.shuffle(x)
-        if len(x) != N:
-            np.random.shuffle(x)
-            x = x[:N-1]
-            x = np.append(x, main)
+                    np.random.shuffle(x)
+        if N == 1:
+            x = x[0]
         return x
     
     def function(self, function, **kwargs):
@@ -1119,7 +1115,7 @@ class RichArray(np.ndarray):
     
     def domains(self):
         new_array = (np.array([x.domain for x in self.flat])
-                     .reshape([*self.shape,2]).transpose())
+                     .reshape([*self.shape,2]))
         return new_array 
     
     def are_lims(self):
@@ -1206,12 +1202,13 @@ class RichArray(np.ndarray):
             elif x.is_uplim:
                 x.unc = [x.main / cu] * 2
 
-    def sample(self, N=defaultparams['size of samples']):
+    def sample(self, len_sample=1):
         """Obtain a sample of each entry of the array"""
         new_array = np.empty(0, float)
         for x in self.flat:
-            new_array = np.append(new_array, x.sample(N))
-        new_shape = (*self.shape, N) if N != 1 else self.shape
+            new_array = np.append(new_array, x.sample(len_sample))
+        new_shape = ((*self.shape, len_sample) if len_sample != 1
+                     else self.shape)
         new_array = new_array.reshape(new_shape).transpose()
         return new_array
 
@@ -1455,8 +1452,7 @@ def add_two_rich_values(x, y):
     num_sf = max(x.num_sf, y.num_sf)
     min_exp = min(x.min_exp, y.min_exp)
     domain = [x.domain[0] + y.domain[0], x.domain[1] + y.domain[1]]
-    sigmas = defaultparams['limit factor to use approximate '
-                           + 'uncertainty propagation']
+    sigmas = defaultparams['sigmas to use approximate uncertainty propagation']
     if (not (x.is_interv() or y.is_interv())
             and min(x.rel_ampl()) > sigmas and min(y.rel_ampl())) > sigmas:
         z = x.main + y.main
@@ -1487,7 +1483,7 @@ def multiply_two_rich_values(x, y):
     """
     num_sf = max(x.num_sf, y.num_sf)
     min_exp = min(x.min_exp, y.min_exp)
-    with np.errstate(all='ignore'):
+    with np.errstate(divide='ignore', invalid='ignore'):
         domain_combs = [x.domain[0] * y.domain[0], x.domain[0] * y.domain[1],
                         x.domain[1] * y.domain[0], x.domain[1] * y.domain[1]]
     domain1, domain2 = min(domain_combs), max(domain_combs)
@@ -1496,8 +1492,7 @@ def multiply_two_rich_values(x, y):
     domain2 = (np.nan_to_num(domain2, nan=np.inf) if np.isnan(domain2)
                else domain2)
     domain = [domain1, domain2]
-    sigmas = defaultparams['limit factor to use approximate '
-                           + 'uncertainty propagation']
+    sigmas = defaultparams['sigmas to use approximate uncertainty propagation']
     if (not (x.is_interv() or y.is_interv())
          and x.prop_factor() > sigmas and y.prop_factor() > sigmas):
         z = x.main * y.main
@@ -1530,15 +1525,14 @@ def divide_two_rich_values(x, y):
     """
     num_sf = max(x.num_sf, y.num_sf)
     min_exp = min(x.min_exp, y.min_exp)
-    with np.errstate(all='ignore'):
+    with np.errstate(divide='ignore', invalid='ignore'):
         domain_combs = [x.domain[0] * y.domain[0], x.domain[0] * y.domain[1],
                         x.domain[1] * y.domain[0], x.domain[1] * y.domain[1]]
     domain1, domain2 = min(domain_combs), max(domain_combs)
     domain1 = -np.inf if np.isinf(domain1) else domain1
     domain2 = np.inf if np.isinf(domain1) else domain2
     domain = [domain1, domain2]
-    sigmas = defaultparams['limit factor to use approximate '
-                           + 'uncertainty propagation']
+    sigmas = defaultparams['sigmas to use approximate uncertainty propagation']
     if (not (x.is_interv() or y.is_interv()) and 0 not in [x.main, y.main]
          and x.prop_factor() > sigmas and y.prop_factor() > sigmas):
         z = x.main / y.main
@@ -1546,9 +1540,6 @@ def divide_two_rich_values(x, y):
         dz = z * ((dx/x.main)**2 + (dy/y.main)**2)**0.5
         z = RichValue(z, dz, domain=domain)
     else:
-        sigmas = (np.inf if y.main == 0 else
-                  defaultparams['limit factor to use approximate '
-                                + 'uncertainty propagation'])
         z = function_with_rich_values(lambda a,b: a/b, [x, y], domain=domain,
                                   is_vectorizable=True, sigmas=sigmas)
     z.num_sf = num_sf
@@ -1928,11 +1919,9 @@ def sample_from_pdf(pdf, size, low, high, **kwargs):
     x : array
         Sample of the distribution.
     """
-    num_points = max(10, size)
-    x = np.random.uniform(low, high, size=num_points)
-    x = np.sort(x)
+    num_points = max(12, size)
+    x = np.random.uniform(low, high, num_points)
     y = pdf(x, **kwargs)
-    y = np.nan_to_num(y, nan=0.)
     y /= y.sum()
     x = np.random.choice(x, p=y, size=size)
     return x
@@ -2122,8 +2111,8 @@ def distr_with_rich_values(function, args, len_samples=None,
 def function_with_rich_values(
         function, args, unc_function=None, is_vectorizable=False,
         len_samples=None, domain=None, consider_ranges=True,
-        sigmas=defaultparams['limit factor to use approximate '
-                               + 'uncertainty propagation'],
+        sigmas=defaultparams['sigmas to use approximate '
+                             + 'uncertainty propagation'],
         use_sigma_combs=defaultparams['use 1-sigma combinations to '
                                       + 'approximate uncertainty propagation'],
         lims_fraction=defaultparams['fraction of the central value '
@@ -2640,7 +2629,7 @@ def errorbar(x, y, lims_factor=None, **kwargs):
     def lim_factor(x):
         xc = np.sort(x.mains())
         xc = xc[np.isfinite(xc)]
-        with np.errstate(all='ignore'):
+        with np.errstate(divide='ignore', invalid='ignore'):
             r = abs(linregress(xc, np.arange(len(xc))).rvalue)
         factor = 2. + 12.*r**8
         return factor
@@ -2712,7 +2701,7 @@ def point_fit(y, function, guess, num_samples=3000,
     lim_loss_factor : float, optional
         Factor to enlarge the loss if the rich value is not a centered value
         and the prediction falls outside the interval of possible values of the
-        rich value.
+        rich value. The default is 4.
     kwargs : arguments, optional
         Keyword arguments of SciPy's function 'minimize'.
 
@@ -2811,7 +2800,7 @@ def curve_fit(x, y, function, guess, num_samples=3000,
     lim_loss_factor : float, optional
         Factor to enlarge the loss if the rich value is not a centered value
         and the prediction falls outside the interval of possible values of the
-        rich value.
+        rich value. The default is 4.
     **kwargs : arguments
         Keyword arguments of SciPy's function 'minimize'.
 
