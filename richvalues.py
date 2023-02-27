@@ -100,30 +100,29 @@ def round_sf(x,
     sign = '-' if x < 0 else ''
     x = abs(x)
     base = '{:e}'.format(x).split('e')[0]
+    m = n+1 if round(float(base), n) <= extra_sf_lim else n
+    y = str(float('{:.{}g}'.format(x, m)))
+    base = '{:e}'.format(float(y)).split('e')[0]
     if round(float(base), n) <= extra_sf_lim:
         n += 1
-    y = str(float('{:.{}g}'.format(x, n)))
-    base_ = '{:e}'.format(float(y)).split('e')[0]
-    base_ = round(float(base_), n-1)
-    num_zeros = n-1 if round(float(base), n) <= extra_sf_lim else n
-    if x < 1 and float(base) != 1 and 1 == base_ <= extra_sf_lim:
-        y += '0'*num_zeros
     integers = len(y.split('.')[0])
     if x > 1 and integers >= n:
         y = y.replace('.0','')
-    digits = str(x).replace('.','')
+    digits = str(y).replace('.','')
     for i in range(len(digits)-1):
         if digits.startswith('0'):
             digits = digits[1:]
     digits = len(digits)
     if n > digits:
-        y = y + '0'*(n-digits)
+        if 'e' not in y:
+            y = y + '0'*(n-digits)
     if use_exp:
         y = '{:.{}e}'.format(float(y), max(n-1,0))
-        y, a = y.split('e')
-        if float(y) == 1 and not '.' in y:
-            y += '.' + n*'0'
-        y = '{}e{}'.format(y, a)
+        if 'e' in y:
+            y, a = y.split('e')
+            if float(y) == 1 and not '.' in y:
+                y += '.' + n*'0'
+            y = '{}e{}'.format(y, a)
     y = sign + y
     if x == 0:
         y = '0'
@@ -385,11 +384,11 @@ class RichValue():
         main_or = copy.copy(main)
         if type(main) in [list, tuple]:
             main = [float(main[0]), float(main[1])]
-            if main_or[0] <= domain[0]:
+            if main_or[0] <= domain[0] and main_or[1] < domain[1]:
                 is_uplim = True
                 main = main[1]
                 unc = 0
-            elif main_or[1] >= domain[1]:
+            elif main_or[1] >= domain[1] and main_or[0] > domain[0]:
                 is_lolim = True
                 main = main[0]
                 unc = 0
@@ -398,11 +397,17 @@ class RichValue():
             if is_lolim and is_uplim:
                 is_range = True
                 main = domain
+            if main == domain:
+                main = np.nan
+                unc = 0
+                is_range = False
             if is_range:
                 unc = (main[1] - main[0]) / 2
                 main = (main[0] + main[1]) / 2
         else:
             main = float(main)
+        if np.isinf(main):
+            print(is_uplim)
         if not hasattr(unc, '__iter__'):
             unc = [unc, unc]
         if any(np.isinf(unc)):
@@ -571,18 +576,6 @@ class RichValue():
              or (self.is_lim() and abs(np.floor(log10(abs(float(x))))) < min_exp)
              or np.isinf(min_exp)):
             use_exp = False
-        x1 = main - unc[0]
-        x2 = main + unc[1]
-        if not np.isnan(domain[0]):
-            x1 = max(domain[0], x1)
-        if not np.isnan(domain[1]):
-            x2 = min(domain[1], x2)
-        new_unc = [main - x1, x2 - main]
-        if (len(round_sf(new_unc[0])) > len(round_sf(unc[0]))
-                or len(round_sf(new_unc[1])) > len(round_sf(unc[0]))):
-            n -= 1
-        n = max(1, n)
-        unc = new_unc
         if not is_range and not np.isnan(main):
             x = main
             dx1, dx2 = unc
@@ -889,12 +882,11 @@ class RichValue():
                     domain = [0, np.inf]
                 else:
                     domain = self.domain
-                new_rich_value = \
-                    function_with_rich_values(lambda a,b: a**b, [self, other_],
-                                              domain=domain)
-                new_rich_value.num_sf = max(self.num_sf, other_.num_sf)
+                new_rich_value = function_with_rich_values(lambda a,b: a**b,
+                                                [self, other_], domain=domain)
             else:
-                new_rich_value = RichValue(0, num_sf=self.num_sf)
+                new_rich_value = RichValue(0)
+                new_rich_value.num_sf = self.num_sf
         elif (type(other) is not RichValue and self.prop_factor() > sigmas):
             x = main ** other
             dx = abs(x * other * np.array(unc) / main)
@@ -912,7 +904,7 @@ class RichValue():
             else:
                 domain = [-np.inf, np.inf]
             new_rich_value = RichValue(x, dx, self.is_lolim, self.is_uplim,
-                                       domain)
+                                       domain=domain)
             new_rich_value.num_sf = self.num_sf
         else:
             if (type(other) is RichValue and other.domain[0] < 0
@@ -2207,6 +2199,9 @@ def function_with_rich_values(
         len_samples = int(len(args)**0.5 * defaultparams['size of samples'])
     num_sf = max([arg.num_sf for arg in args])
     min_exp = min([arg.min_exp for arg in args])
+    if all([not arg.is_interv() for arg in args]):
+        consider_ranges = False
+    
     unc_propagation = \
         (not any([arg.is_interv() for arg in args])
          and all([arg.prop_factor() > sigmas for arg in args]))
@@ -2218,6 +2213,7 @@ def function_with_rich_values(
     else:
         if unc_function is None:
             unc_propagation = False
+            
     args_main = [arg.main for arg in args]
     try:
         main = function(*args_main)
@@ -2308,7 +2304,8 @@ def function_with_rich_values(
                     domain1 = np.min(domain_distr[:,k])
                     domain2 = np.max(domain_distr[:,k])
                 domain1, domain2 = remove_zero_infs([domain1, domain2])
-                domain_k = [domain1, domain2]
+                domain_k = [float(round_sf(domain1, num_sf+3)),
+                            float(round_sf(domain2, num_sf+3))]
                 domain_k = add_zero_infs(domain_k, zero_log+6, inf_log-6)
                 def function_k(*argsk):
                     y = function(*argsk)
@@ -2893,7 +2890,7 @@ def curve_fit(x, y, function, guess, num_samples=3000,
     samples = np.array(samples).transpose()
     result = {'parameters': params_fit, 'samples': samples,
               'loss': losses, 'fails': num_fails}
-    return result
+    return result   
    
 def log10(x):
     """Decimal logarithm from NumPy but including x = 0."""
