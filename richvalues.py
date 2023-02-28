@@ -980,7 +980,7 @@ class RichValue():
     def main_value(self, x): self.main = x
     
     @property
-    def uncertainty(self): self.unc
+    def uncertainty(self): return self.unc
     @uncertainty.setter
     def uncertainty(self, x): self.unc = x
     
