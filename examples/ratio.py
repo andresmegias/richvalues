@@ -6,7 +6,7 @@ https://github.com/andresmegias/richvalues
 
 It imports a file of abundances of two molecules in several astronomical
 sources, computes the ratio between both species for each source, makes
-a plot of it and export the results.
+a plot of it and exports the results.
 
 Andrés Megías Toledano
 """

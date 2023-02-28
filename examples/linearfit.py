@@ -60,8 +60,8 @@ print('Elapsed time for the fit: {:.1f} s.'.format(t2-t1))
 
 #%% Plots.
 
-plot_fit = True
-plot_truth = True
+plot_fit = False
+plot_truth = False
 color_fit = 'darkblue'
 color_samples = 'tab:blue'
 color_truth = 'tab:orange'
