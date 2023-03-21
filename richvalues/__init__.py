@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Rich Values Library
+RichValues Library
 -------------------
 Version 2.0
 
