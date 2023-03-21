@@ -4,7 +4,7 @@ Python 3 library for dealing with numeric values with uncertainties, upper/lower
 
 The libraries NumPy, Pandas, SciPy and Matplotlib are required.
 
-You can read the user guide ([`richvalues-userguide.pdf`](https://github.com/andresmegias/richvalues/blob/main/richvalues-userguide.pdf)) to learn how to use it. You can also test the library in the example scripts inside the `examples` folder.
+You can read the user guide ([`userguide.pdf`](https://github.com/andresmegias/richvalues/blob/main/richvalues-userguide.pdf)) to learn how to use it. You can also test the library in the example scripts inside the `examples` folder.
 
 ## Installation
 
