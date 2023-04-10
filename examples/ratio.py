@@ -28,11 +28,11 @@ data = rv.rich_dataframe(data, domains=[0,np.inf])
 t1 = time.time()
 use_create_column = False
 if use_create_column:
-    ratio = data.create_column(lambda a,b: a/b, ['HCCCN','CH3CN'],
+    ratio = data.create_column('{}/{}', ['HC3N','CH3CN'],
                 unc_function= lambda a,b,da,db: a/b*((da/a)**2+(db/b)**2)**0.5,
                 domain=[0,np.inf], is_vectorizable=True)
 else:
-    ratio = rv.rich_array(data['HCCCN'] / data['CH3CN'])
+    ratio = data['HC3N'] / data['CH3CN']
 t2 = time.time()
 data['ratio'] = ratio
 print('Elapsed time for calculations: {:.3f} s.'.format(t2-t1))
@@ -58,32 +58,32 @@ plot_approx_uncs = False
 plt.figure(1, figsize=(7.5,5.0))
 plt.clf()
 rv.errorbar(locs, ratio, fmt=',', color='black')
-plt.scatter(locs, ratio.mains(), color=colors, zorder=3)
+plt.scatter(locs, ratio.mains, color=colors, zorder=3)
 if plot_approx_uncs:
-    col_dens_HCCCN = rv.rich_array(data['HCCCN'])
+    col_dens_HC3N = rv.rich_array(data['HC3N'])
     col_dens_CH3CN = rv.rich_array(data['CH3CN'])
-    ratio_mains = col_dens_HCCCN.mains() / col_dens_CH3CN.mains()
-    ratio_uncs = \
-        ratio_mains * ((col_dens_HCCCN.uncs()/col_dens_HCCCN.mains())**2
-                       +(col_dens_CH3CN.uncs()/col_dens_CH3CN.mains())**2)**0.5
+    ratio_mains = col_dens_HC3N.mains / col_dens_CH3CN.mains
+    ratio_uncs_eb = \
+        ratio_mains * ((col_dens_HC3N.uncs_eb/col_dens_HC3N.mains)**2
+                       +(col_dens_CH3CN.uncs_eb/col_dens_CH3CN.mains)**2)**0.5
     for i in range(len(ratio_mains)):
         if col_dens_CH3CN[i].is_uplim:
-            ratio_mains[i] = ((col_dens_HCCCN[i].main - col_dens_HCCCN[i].unc[0])
+            ratio_mains[i] = ((col_dens_HC3N[i].main - col_dens_HC3N[i].unc[0])
                               / col_dens_CH3CN[i].main)
-    ratio_mains[-2] = (col_dens_HCCCN[-2].main / col_dens_CH3CN[-2].main
+    ratio_mains[-2] = (col_dens_HC3N[-2].main / col_dens_CH3CN[-2].main
                        - col_dens_CH3CN[-2].unc[0])
-    cond = np.isfinite(ratio.mains())
+    cond = np.isfinite(ratio.mains)
     locs_ = locs[cond]
     ratio_mains = ratio_mains[cond]
-    ratio_uncs = ratio_uncs[:,cond]
-    cond = ~ rv.rich_array(ratio[np.isfinite(ratio.mains())]).are_lims()
-    plt.errorbar(locs_[cond], ratio_mains[cond], yerr=ratio_uncs[:,cond],
+    ratio_uncs_eb = ratio_uncs_eb[:,cond]
+    cond = ~ rv.rich_array(ratio[np.isfinite(ratio.mains)]).are_lims
+    plt.errorbar(locs_[cond], ratio_mains[cond], yerr=ratio_uncs_eb[:,cond],
                  fmt=',', alpha=0.7, color='chocolate')
     plt.scatter(locs_, ratio_mains, color='chocolate', alpha=0.7, zorder=3)
 plt.xlim([-0.5, locs[-1] + 0.5])
 plt.axhline(y=1, linestyle='-', linewidth=0.8, color=(0.4,0.4,0.4))
 plt.yscale('log')
-cond = ~ np.isnan(ratio.mains())
+cond = ~ np.isnan(ratio.mains)
 plt.xticks(ticks=locs[cond], labels=names[cond], rotation=90,
            fontsize=0.8*fontsize)
 plt.ylabel('HC$_3$N / CH$_3$CN abundance ratio')
