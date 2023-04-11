@@ -37,7 +37,7 @@ IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 """
 
-__version__ = '3.0.0'
+__version__ = '3.0.8'
 __author__ = 'Andrés Megías Toledano'
 
 import copy
@@ -65,7 +65,7 @@ defaultparams = {
     'decimal exponent to define infinity': 90.,
     'multiplication symbol for scientific notation in LaTeX': '\\cdot',
     'sigmas for overlap': 1.,
-    'sigmas for comparison': 3.
+    'sigmas for interval': 3.
     }
 
 variable_count = 1
@@ -335,6 +335,8 @@ class RichValue():
             domain = defaultparams['domain']
         unc_or = copy.copy(unc)
         main_or = copy.copy(main)
+        if not domain[0] <= domain[1]:
+            raise Exception('Invalid domain {}.'.format(domain))
         
         if type(main) in [list, tuple]:
             is_lolim, is_uplim, is_range = False, False, False
@@ -367,7 +369,7 @@ class RichValue():
             main = np.nan
             unc = [0, 0]
         unc = np.nan_to_num(unc, nan=0)
-        if np.isfinite(main) and not domain[0] <= main <= domain[1]:
+        if not np.isnan(main) and not domain[0] <= main <= domain[1]:
             raise Exception('Invalid main value {} for domain {}.'
                             .format(main, domain))
         unc = list(unc)
@@ -514,11 +516,13 @@ class RichValue():
                     and all(np.isfinite(self.unc)) else False)
         return isfinite
     
-    def interval(self, sigmas=3.):
+    def interval(self, sigmas=defaultparams['sigmas for interval']):
         """Interval of possible values of the rich value."""
         if not self.is_interv:
-            interv = [max(self.domain[0], self.main - sigmas*self.unc[0]),
-                      min(self.domain[1], self.main + sigmas*self.unc[1])]
+            ampl1 = sigmas * self.unc[0] if self.unc[0] != 0 else 0
+            ampl2 = sigmas * self.unc[1] if self.unc[1] != 0 else 0
+            interv = [max(self.domain[0], self.main - ampl1),
+                      min(self.domain[1], self.main + ampl2)]
         else:
             if self.is_uplim and not self.is_lolim:
                 interv = [self.domain[0], self.main]
@@ -527,6 +531,20 @@ class RichValue():
             else:
                 interv = [self.main - self.unc[0], self.main + self.unc[1]]
         return interv
+    
+    def sign(self, sigmas=np.inf):
+        """Sign of the richvalue."""
+        interv = self.interval(sigmas)
+        signs_interv = np.sign(interv)
+        if all(signs_interv == 0):
+            s = 0
+        elif all(signs_interv >= 0):
+            s = 1
+        elif all(signs_interv <= 0):
+            s = -1
+        else:
+            s = np.nan
+        return s
   
     def set_lims_factor(self, factor=4.):
         """Set uncertainties of limits with respect to cetral values."""
@@ -743,7 +761,7 @@ class RichValue():
             x1, x2 = self.interval()
             x1, x2 = abs(x1), abs(x2)
             x = [min(x1, x2), max(x1, x2)]
-        dx = unc
+        dx = np.abs(unc)
         domain = [abs(domain[0]), abs(domain[1])]
         domain = [min(domain), max(domain)]
         if np.isinf(domain[0]):
@@ -762,7 +780,7 @@ class RichValue():
         else:
             x1, x2 = self.interval()
             x = [-x2, -x1]
-        dx = unc
+        dx = np.abs(unc)
         domain = [-domain[0], -domain[1]]
         domain = [min(domain), max(domain)]
         new_rval = RichValue(x, dx, domain=domain)
@@ -790,7 +808,7 @@ class RichValue():
             else:
                 if other_ != 0:
                     x = self.main + other_
-                    dx = copy.copy(self.unc)
+                    dx = np.abs(self.unc)
                     new_rval = RichValue(x, dx, self.is_lolim, self.is_uplim,
                                          self.is_range, self.domain)
                 else:
@@ -833,9 +851,11 @@ class RichValue():
             else:
                 if other_ != 0:
                     x = self.main * other_
-                    dx = np.array(self.unc) * other_
+                    dx = np.abs(np.array(self.unc) * other_)
                     if type(other_) is not RichValue:
-                        other_ = RichValue(other_)
+                        other_domain = (other.domain if type(other)
+                                        is RichValue else None)
+                        other_ = RichValue(other_, domain=other_domain)
                     domain_combs = [self.domain[i1] * other_.domain[i2]
                                     for i1,i2 in zip([0,0,1,1],[0,1,0,1])]
                     domain1, domain2 = min(domain_combs), max(domain_combs)
@@ -881,9 +901,11 @@ class RichValue():
                 if other_ != 0:
                     with np.errstate(divide='ignore', invalid='ignore'):
                         x = self.main / other_
-                        dx = np.array(self.unc) / other_
+                        dx = np.abs(np.array(self.unc) / other_)
                         if type(other_) is not RichValue:
-                            other_ = RichValue(other_)
+                            other_domain = (other.domain if type(other)
+                                            is RichValue else None)
+                            other_ = RichValue(other_, domain=other_domain)
                         domain_combs = [self.domain[i1] * other_.domain[i2]
                                         for i1,i2 in zip([0,0,1,1],[0,1,0,1])]
                         domain1, domain2 = min(domain_combs), max(domain_combs)
@@ -897,7 +919,27 @@ class RichValue():
                     new_rval.num_sf = self.num_sf
                     new_rval.min_exp = self.min_exp
                 else:
-                    new_rval = RichValue(np.nan, domain=self.domain)
+                    if type(other_) is not RichValue:
+                        other_domain = (other.domain if type(other)
+                                        is RichValue else None)
+                        other_ = RichValue(other_, domain=other_domain)
+                    zero = other_
+                    zero_signs = np.sign(zero.domain)
+                    if all(zero_signs == 0):
+                        zero_sign = np.nan
+                    elif all(zero_signs >= 0):
+                        zero_sign = 1
+                    elif all(zero_signs <= 0):
+                        zero_sign = -1
+                    else:
+                        zero_sign = np.nan
+                    sign = self.sign() * zero_sign
+                    value = sign * np.inf
+                    if np.isinf(value):
+                        domain = [0, np.inf] if value > 0 else [-np.inf, 0]
+                    else:
+                        domain = (sign * abs(self)).domain
+                    new_rval = RichValue(value, domain=domain)
         else:
             vars_str = ','.join(variables)
             function = eval('lambda {}: {}'.format(vars_str, expression))
@@ -926,9 +968,11 @@ class RichValue():
                 if other_ != 0:
                     with np.errstate(divide='ignore'):
                         x = other_ / self.main
-                        dx = x * np.array(self.unc) / self.main
+                        dx = np.abs(x * np.array(self.unc) / self.main)
                         if type(other_) is not RichValue:
-                            other_ = RichValue(other_)
+                            other_domain = (other.domain if type(other)
+                                            is RichValue else None)
+                            other_ = RichValue(other_, domain=other_domain)
                         domain_combs = [self.domain[i1] * other_.domain[i2]
                                         for i1,i2 in zip([0,0,1,1],[0,1,0,1])]
                         domain1, domain2 = min(domain_combs), max(domain_combs)
@@ -986,7 +1030,7 @@ class RichValue():
                     new_rval.num_sf = self.num_sf
             elif (type(other) is not RichValue and self.prop_score > sigmas):
                 x = main ** other
-                dx = abs(x * other * np.array(unc) / main)
+                dx = np.abs(x * other * np.array(unc) / main)
                 if domain != [-np.inf, np.inf]:
                     if domain[0] != 0 or (domain[0] == 0 and other>0):
                         x1 = domain[0] ** other
@@ -1239,22 +1283,22 @@ class RichArray(np.ndarray):
         array = np.empty(mains.size, object)
         if uncs.size == 1:
             uncs = uncs * np.ones((*mains.shape, 2))
-        elif len(uncs) == 2:
+        elif len(uncs) == 2 and type(uncs[0]) is not np.ndarray:
             uncs = np.array([uncs[0] * np.ones(mains.shape),
-                             uncs[1] * np.ones(mains.shape)]).transpose()
+                             uncs[1] * np.ones(mains.shape)])
         elif uncs.shape == (*mains.shape, 2):
             uncs = uncs.transpose()
         elif uncs.shape == mains.shape:
             uncs = np.array([[uncs]]*2).reshape((2, *mains.shape))
-        if len(domains) == 2:
+        if len(domains) == 2 and type(domains[0]) is not np.ndarray:
             domains = np.array([domains[0] * np.ones(mains.shape),
-                                domains[1] * np.ones(mains.shape)]).transpose()
+                                domains[1] * np.ones(mains.shape)])
         elif domains.shape == (*mains.shape, 2):
             domains = domains.transpose()
         elif domains.flatten().shape == (2,):
             domains = (np.array([domains for x in mains.flat])
                        .reshape((*mains.shape, 2)).transpose())
-            
+        
         mains_flat = mains.flatten()
         uncs_flat = uncs.flatten()
         are_lolims_flat = are_lolims.flatten()
@@ -1339,7 +1383,7 @@ class RichArray(np.ndarray):
     def uncs_eb(self):
         return self.uncs.transpose()
     
-    def intervals(self, sigmas=3.):
+    def intervals(self, sigmas=None):
         return (np.array([x.interval() for x in self.flat])
                 .reshape((*self.shape,2)))
     
@@ -1779,7 +1823,7 @@ class RichSeries(pd.Series):
         return [pd.Series(rich_array(self.values).prop_scores.T[i].T,
                           self.index) for i in (0,1)]
     
-    def intervals(self, sigmas=3.):
+    def intervals(self, sigmas=defaultparams['sigmas for interval']):
         return [pd.Series(rich_array(self.values).intervals(sigmas).T[i].T,
                           self.index) for i in (0,1)]
     
@@ -1858,7 +1902,7 @@ def multiply_two_rich_values(x, y):
          and x.prop_score > sigmas and y.prop_score > sigmas):
         z = x.main * y.main
         dx, dy = np.array(x.unc), np.array(y.unc)
-        dz = z * ((dx/x.main)**2 + (dy/y.main)**2)**0.5
+        dz = abs(z) * ((dx/x.main)**2 + (dy/y.main)**2)**0.5
         z = RichValue(z, dz, domain=domain)
     else:
         z = function_with_rich_values(lambda a,b: a*b, [x, y], domain=domain,
@@ -1885,7 +1929,7 @@ def divide_two_rich_values(x, y):
          and x.prop_score > sigmas and y.prop_score > sigmas):
         z = x.main / y.main
         dx, dy = np.array(x.unc), np.array(y.unc)
-        dz = z * ((dx/x.main)**2 + (dy/y.main)**2)**0.5
+        dz = abs(z) * ((dx/x.main)**2 + (dy/y.main)**2)**0.5
         z = RichValue(z, dz, domain=domain)
     else:
         z = function_with_rich_values(lambda a,b: a/b, [x, y], domain=domain,
@@ -1894,7 +1938,7 @@ def divide_two_rich_values(x, y):
     z.min_exp = min_exp
     return z
 
-def greater(x, y, sigmas=defaultparams['sigmas for comparison']):
+def greater(x, y, sigmas=defaultparams['sigmas for interval']):
     """Determine if a rich value/array (x) is greater than another one (y)."""
     are_single_values = all([type(var) is str
                              or not hasattr(var, '__iter__') for var in (x,y)])
@@ -1971,7 +2015,7 @@ def equiv(x, y, sigmas=defaultparams['sigmas for overlap']):
     return output
 
 def greater_equiv(x, y,
-                  sigmas_comparison=defaultparams['sigmas for comparison'],
+                  sigmas_interval=defaultparams['sigmas for interval'],
                   sigmas_overlap=defaultparams['sigmas for overlap']):
     """Check if a rich value/array is greater or equivalent than another one."""
     are_single_values = all([type(var) is str
@@ -1979,7 +2023,7 @@ def greater_equiv(x, y,
     if are_single_values:
         x = x if type(x) is RichValue else rich_value(x)
         y = y if type(y) is RichValue else rich_value(y)
-        output = greater(x, y, sigmas_comparison) or equiv(x, y, sigmas_overlap)
+        output = greater(x, y, sigmas_interval) or equiv(x, y, sigmas_overlap)
     else:
         x = x if type(x) is RichArray else rich_array(x)
         y = y if type(y) is RichValue else rich_array(y)
@@ -1996,7 +2040,7 @@ def greater_equiv(x, y,
     return output
 
 def less_equiv(x, y,
-               sigmas_comparison=defaultparams['sigmas for comparison'],
+               sigmas_interval=defaultparams['sigmas for interval'],
                sigmas_overlap=defaultparams['sigmas for overlap']):
     """Check if a rich value/array is less or equivalent than another one."""
     are_single_values = all([type(var) is str
@@ -2004,7 +2048,7 @@ def less_equiv(x, y,
     if are_single_values:
         x = x if type(x) is RichValue else rich_value(x)
         y = y if type(y) is RichValue else rich_value(y)
-        output = less(x, y, sigmas_comparison) or equiv(x, y, sigmas_overlap)
+        output = less(x, y, sigmas_interval) or equiv(x, y, sigmas_overlap)
     else:
         x = x if type(x) is RichArray else rich_array(x)
         y = y if type(y) is RichValue else rich_array(y)
