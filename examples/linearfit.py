@@ -75,6 +75,7 @@ plt.clf()
 rv.errorbar(x, y, color='gray')
 xlims = plt.xlim()
 ylims = plt.ylim()
+
 if plot_fit:
     x_ = np.linspace(0, xlims[1], 4)
     plt.plot(x_, slope.main * x_ + offset.main, color=color_fit, lw=1,
@@ -97,6 +98,7 @@ if plot_fit:
                  zorder=1)
     plt.legend(fontsize=9)
     plt.title('Linear fit')
+    
 plt.ylim([0, ylims[1]])
 plt.xlim([0, xlims[1]])
 plt.xlabel('$x$')
