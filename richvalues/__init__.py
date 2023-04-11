@@ -1472,52 +1472,53 @@ class RichDataFrame(pd.DataFrame):
         output = {}
         exec(code, {**{'self': self}, **globals()}, output)
         return output['df']
-    
+
+    @property    
     def mains(self):
         return self._attribute('mains')
-
+    @property
     def uncs(self):
         return self._attribute2('uncs')
-    
+    @property
     def are_lolims(self):
         return self._attribute('are_lolims')
-    
+    @property
     def are_uplims(self):
         return self._attribute('are_uplims')
-    
+    @property
     def are_ranges(self):
         return self._attribute('are_ranges')
-    
+    @property
     def domains(self):
         return self._attribute2('domains')
-    
+    @property
     def are_lims(self):
         return self._attribute('are_lims')
-    
+    @property
     def are_intervs(self):
         return self._attribute('are_intervs')
-    
+    @property
     def are_centrs(self):
         return self._attribute('are_centrs')
-    
+    @property
     def rel_uncs(self):
         return self._attribute2('rel_uncs')
-    
+    @property
     def signals_noises(self):
         return self._attribute2('signal_noises')
-    
+    @property
     def ampls(self):
         return self._attribute2('ampls')
-    
+    @property
     def rel_ampls(self):
         return self._attribute2('rel_ampls')
-    
+    @property
     def norm_uncs(self):
         return self._attribute2('norm_uncs')
-    
+    @property
     def prop_scores(self):
         return self._attribute('prop_scores')
-    
+
     def intervals(self):
         return self._attribute2('intervals')
     
