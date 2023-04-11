@@ -37,7 +37,7 @@ IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 """
 
-__version__ = '3.0.8'
+__version__ = '3.0.9'
 __author__ = 'Andrés Megías Toledano'
 
 import copy
@@ -752,22 +752,32 @@ class RichValue():
         return text
    
     def __abs__(self):
-        main = copy.copy(self.main)
-        unc = copy.copy(self.unc)
+        sigmas = defaultparams['sigmas to use approximate '
+                       + 'uncertainty propagation']
+        x = copy.copy(self.main)
+        dx = copy.copy(self.unc)
         domain = copy.copy(self.domain)
-        if not self.is_interv:
-            x = abs(main)
+        x1, x2 = self.interval(sigmas=np.inf)
+        if all(np.array([x1, x2]) >= 0):
+            if (self.is_centr and self.prop_score > sigmas) or self.is_interv:
+                new_rval = self
+            else:
+                new_rval = self.function(lambda x: abs(x), domain=domain)
+        elif all(np.array([x1, x2]) <= 0):
+            new_rval = -self
         else:
-            x1, x2 = self.interval()
-            x1, x2 = abs(x1), abs(x2)
-            x = [min(x1, x2), max(x1, x2)]
-        dx = np.abs(unc)
-        domain = [abs(domain[0]), abs(domain[1])]
-        domain = [min(domain), max(domain)]
-        if np.isinf(domain[0]):
             domain[0] = 0
-        new_rval = RichValue(x, dx, domain=domain)
-        new_rval.vars = self.vars
+            if self.is_centr:
+                if self.prop_score > sigmas:
+                    x = abs(x)
+                    new_rval = RichValue(x, dx, domain=domain)
+                else:
+                    new_rval = self.function(lambda x: abs(x), domain=domain)
+            else:
+                x2 = max(np.abs([x1, x2]))
+                x1 = 0
+                new_rval = RichValue([x1, x2], dx, domain=domain)
+        new_rval.domain[0] = max(0, new_rval.domain[0])
         new_rval.expression = 'abs({})'.format(self.expression)
         return new_rval
    
@@ -1192,7 +1202,7 @@ class RichValue():
     def minimum_exponent_for_scientific_notation(self, x): self.min_exp = x
     
     @property
-    def variables(self): return self.variable
+    def variables(self): return self.vars
     @variables.setter
     def variables(self, x): self.vars = x
     
@@ -1518,50 +1528,35 @@ class RichDataFrame(pd.DataFrame):
         return output['df']
 
     @property    
-    def mains(self):
-        return self._attribute('mains')
+    def mains(self): return self._attribute('mains')
     @property
-    def uncs(self):
-        return self._attribute2('uncs')
+    def uncs(self): return self._attribute2('uncs')
     @property
-    def are_lolims(self):
-        return self._attribute('are_lolims')
+    def are_lolims(self): return self._attribute('are_lolims')
     @property
-    def are_uplims(self):
-        return self._attribute('are_uplims')
+    def are_uplims(self): return self._attribute('are_uplims')
     @property
-    def are_ranges(self):
-        return self._attribute('are_ranges')
+    def are_ranges(self): return self._attribute('are_ranges')
     @property
-    def domains(self):
-        return self._attribute2('domains')
+    def domains(self): return self._attribute2('domains')
     @property
-    def are_lims(self):
-        return self._attribute('are_lims')
+    def are_lims(self): return self._attribute('are_lims')
     @property
-    def are_intervs(self):
-        return self._attribute('are_intervs')
+    def are_intervs(self): return self._attribute('are_intervs')
     @property
-    def are_centrs(self):
-        return self._attribute('are_centrs')
+    def are_centrs(self): return self._attribute('are_centrs')
     @property
-    def rel_uncs(self):
-        return self._attribute2('rel_uncs')
+    def rel_uncs(self): return self._attribute2('rel_uncs')
     @property
-    def signals_noises(self):
-        return self._attribute2('signal_noises')
+    def signals_noises(self): return self._attribute2('signal_noises')
     @property
-    def ampls(self):
-        return self._attribute2('ampls')
+    def ampls(self): return self._attribute2('ampls')
     @property
-    def rel_ampls(self):
-        return self._attribute2('rel_ampls')
+    def rel_ampls(self): return self._attribute2('rel_ampls')
     @property
-    def norm_uncs(self):
-        return self._attribute2('norm_uncs')
+    def norm_uncs(self): return self._attribute2('norm_uncs')
     @property
-    def prop_scores(self):
-        return self._attribute('prop_scores')
+    def prop_scores(self): return self._attribute('prop_scores')
 
     def intervals(self):
         return self._attribute2('intervals')
