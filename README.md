@@ -1,6 +1,8 @@
 # RichValues
 
-Python 3 library for dealing with numeric values with uncertainties, upper/lower limits and finite intervals, which may be called _rich values_. With it, one can import rich values written in plain text documents in an easily readable format, operate with them propagating the uncertainties automatically, and export them in the same formatting style as the import. It also allows to easily plot rich values and to make fits to any function taking into account the uncertainties and upper/lower limits or finite intervals. Moreover, correlations between variables (that is, variables which are not independent) are taken into account when performing calculations with rich values.
+Python 3 library for dealing with numeric values with uncertainties, upper/lower limits and finite intervals, which may be called _rich values_.
+
+With it, one can import rich values written in plain text documents in an easily readable format, operate with them propagating the uncertainties automatically, and export them in the same formatting style as the import. It also allows to easily plot rich values and to make fits to any function taking into account the uncertainties and upper/lower limits or finite intervals. Moreover, correlations between variables (that is, variables which are not independent) are taken into account when performing calculations with rich values.
 
 The libraries NumPy, Pandas, SciPy and Matplotlib are required.
 
