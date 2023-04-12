@@ -37,7 +37,7 @@ IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 """
 
-__version__ = '3.0.9'
+__version__ = '3.0.11'
 __author__ = 'Andrés Megías Toledano'
 
 import copy
@@ -52,7 +52,7 @@ from scipy.stats import linregress
 
 defaultparams = {
     'domain': [-np.inf, np.inf],
-    'size of samples': int(8e3),
+    'size of samples': int(12e3),
     'number of significant figures': 1,
     'limit for extra significant figure': 2.5,
     'minimum exponent for scientific notation': 4,
@@ -65,7 +65,7 @@ defaultparams = {
     'decimal exponent to define infinity': 90.,
     'multiplication symbol for scientific notation in LaTeX': '\\cdot',
     'sigmas for overlap': 1.,
-    'sigmas for interval': 3.
+    'sigmas for intervals': 3.
     }
 
 variable_count = 1
@@ -455,21 +455,27 @@ class RichValue():
     def unc_eb(self):
         """Uncertainties with shape (2,1)"""
         unceb = [[self.unc[0]], [self.unc[1]]]
-        return unceb    
+        return unceb
     @property
     def rel_unc(self):
         """Relative uncertainties"""
-        m, s = self.main, self.unc
-        with np.errstate(divide='ignore', invalid='ignore'):
-            runc = list(np.array(s) / abs(m))
+        if self.is_centr:
+            m, s = self.main, self.unc
+            with np.errstate(divide='ignore', invalid='ignore'):
+                runc = list(np.array(s) / abs(m))
+        else:
+            runc = [np.nan]*2
         return runc
     @property
     def signal_noise(self):
         """Signal-to-noise ratios (S/N)"""
-        m, s = self.main, self.unc
-        with np.errstate(divide='ignore', invalid='ignore'):
-            s_n = list(np.nan_to_num(abs(m) / np.array(s),
-                       nan=0, posinf=np.inf))
+        if self.is_centr:
+            m, s = self.main, self.unc
+            with np.errstate(divide='ignore', invalid='ignore'):
+                s_n = list(np.nan_to_num(abs(m) / np.array(s),
+                           nan=0, posinf=np.inf))
+        else:
+            s_n = [np.nan]*2
         return s_n
     @property    
     def ampl(self):
@@ -480,22 +486,31 @@ class RichValue():
     @property        
     def rel_ampl(self):
         """Relative amplitudes"""
-        s, a = self.unc, self.ampl
-        with np.errstate(divide='ignore'):
-            a_s = list(np.array(a) / np.array(s))
+        if self.is_centr:
+            s, a = self.unc, self.ampl
+            with np.errstate(divide='ignore'):
+                a_s = list(np.array(a) / np.array(s))
+        else:
+            a_s = [np.nan]*2
         return a_s
     @property
     def norm_unc(self):
         """Normalized uncertainties"""
-        s, a = self.unc, self.ampl
-        s_a = list(np.array(s) / np.array(a))
+        if self.is_centr:
+            s, a = self.unc, self.ampl
+            s_a = list(np.array(s) / np.array(a))
+        else:
+            s_a = [np.nan]*2
         return s_a
     @property
     def prop_score(self):
         """Minimum of the signals-to-noise and the relative amplitudes."""
-        s_n = self.signal_noise
-        a_s = self.rel_ampl
-        pf = np.min([s_n, a_s])
+        if self.is_centr:
+            s_n = self.signal_noise
+            a_s = self.rel_ampl
+            pf = np.min([s_n, a_s])
+        else:
+            pf = 0.
         return pf
     @property
     def is_nan(self):
@@ -516,7 +531,7 @@ class RichValue():
                     and all(np.isfinite(self.unc)) else False)
         return isfinite
     
-    def interval(self, sigmas=defaultparams['sigmas for interval']):
+    def interval(self, sigmas=defaultparams['sigmas for intervals']):
         """Interval of possible values of the rich value."""
         if not self.is_interv:
             ampl1 = sigmas * self.unc[0] if self.unc[0] != 0 else 0
@@ -1375,16 +1390,16 @@ class RichArray(np.ndarray):
                 .reshape((*self.shape,2)))
     @property
     def ampls(self):
-        return (np.array([x.ampls for x in self.flat])
+        return (np.array([x.ampl for x in self.flat])
                 .reshape((*self.shape,2)))
     @property
     def rel_ampls(self):
-        return (np.array([x.rel_ampls for x in self.flat])
+        return (np.array([x.rel_ampl for x in self.flat])
                 .reshape((*self.shape,2)))
     @property
     def norm_uncs(self):
         return (np.array([x.norm_unc for x in self.flat])
-                .reshape((self.shape,2)))
+                .reshape((*self.shape,2)))
     @property
     def prop_scores(self):
         return (np.array([x.prop_score for x in self.flat])
@@ -1393,9 +1408,13 @@ class RichArray(np.ndarray):
     def uncs_eb(self):
         return self.uncs.transpose()
     
-    def intervals(self, sigmas=None):
-        return (np.array([x.interval() for x in self.flat])
+    def intervals(self, sigmas=defaultparams['sigmas for intervals']):
+        return (np.array([x.interval(sigmas) for x in self.flat])
                 .reshape((*self.shape,2)))
+
+    def signs(self, sigmas=np.inf):
+        return (np.array([x.sign(sigmas) for x in self.flat])
+                .reshape(self.shape))
     
     def set_params(self, params):
         """Set the rich value parameters of each entry of the rich array."""
@@ -1488,15 +1507,15 @@ class RichDataFrame(pd.DataFrame):
     def _constructor_sliced(self):
         return RichSeries
 
-    def _attribute(self, attribute):
-        """Apply the input RichArray attribute with 1 element."""
+    def _property(self, name):
+        """Apply the input RichArray attribute/method with 1 element."""
         code = [
             'array = self.values',
             'shape = array.shape',
             'types = np.array([type(x) for x in array.flat]).reshape(shape)',
             'data = np.zeros(shape, object)',
             'cond = types == RichValue',
-            'data[cond] = rich_array(array[cond]).{}'.format(attribute),
+            'data[cond] = rich_array(array[cond]).{}'.format(name),
             'cond = ~cond',
             'data[cond] = array[cond]',
             'df = pd.DataFrame(data, self.index, self.columns)']
@@ -1505,15 +1524,15 @@ class RichDataFrame(pd.DataFrame):
         exec(code, {**{'self': self}, **globals()}, output)
         return output['df']
 
-    def _attribute2(self, attribute):
-        """Apply the input RichArray attribute with 2 elements."""
+    def _property2(self, name):
+        """Apply the input RichArray attribute/method with 2 elements."""
         code = [
             'array = self.values',
             'shape = array.shape',
             'types = np.array([type(x) for x in array.flat]).reshape(shape)',
             'data = np.zeros(shape, object)',
             'cond = types == RichValue',
-            'new_elements = rich_array(array[cond]).{}'.format(attribute),
+            'new_elements = rich_array(array[cond]).{}'.format(name),
             'new_elements = [[x[0], x[1]] for x in new_elements]',
             'new_subarray = np.frompyfunc(list, 0, 1)'
             + '(np.empty(cond.sum(), dtype=object))',
@@ -1528,40 +1547,45 @@ class RichDataFrame(pd.DataFrame):
         return output['df']
 
     @property    
-    def mains(self): return self._attribute('mains')
+    def mains(self): return self._property('mains')
     @property
-    def uncs(self): return self._attribute2('uncs')
+    def uncs(self): return self._property2('uncs')
     @property
-    def are_lolims(self): return self._attribute('are_lolims')
+    def are_lolims(self): return self._property('are_lolims')
     @property
-    def are_uplims(self): return self._attribute('are_uplims')
+    def are_uplims(self): return self._property('are_uplims')
     @property
-    def are_ranges(self): return self._attribute('are_ranges')
+    def are_ranges(self): return self._property('are_ranges')
     @property
-    def domains(self): return self._attribute2('domains')
+    def domains(self): return self._property2('domains')
     @property
-    def are_lims(self): return self._attribute('are_lims')
+    def are_lims(self): return self._property('are_lims')
     @property
-    def are_intervs(self): return self._attribute('are_intervs')
+    def are_intervs(self): return self._property('are_intervs')
     @property
-    def are_centrs(self): return self._attribute('are_centrs')
+    def are_centrs(self): return self._property('are_centrs')
     @property
-    def rel_uncs(self): return self._attribute2('rel_uncs')
+    def rel_uncs(self): return self._property2('rel_uncs')
     @property
-    def signals_noises(self): return self._attribute2('signal_noises')
+    def signals_noises(self): return self._property2('signal_noises')
     @property
-    def ampls(self): return self._attribute2('ampls')
+    def ampls(self): return self._property2('ampls')
     @property
-    def rel_ampls(self): return self._attribute2('rel_ampls')
+    def rel_ampls(self): return self._property2('rel_ampls')
     @property
-    def norm_uncs(self): return self._attribute2('norm_uncs')
+    def norm_uncs(self): return self._property2('norm_uncs')
     @property
-    def prop_scores(self): return self._attribute('prop_scores')
+    def prop_scores(self): return self._property('prop_scores')
 
-    def intervals(self):
-        return self._attribute2('intervals')
+    def intervals(self, sigmas=defaultparams['sigmas for intervals']):
+        sigmas = str(sigmas).replace('inf', 'np.inf')
+        return self._property2('intervals({})'.format(sigmas))
+
+    def signs(self, sigmas=np.inf):
+        sigmas = str(sigmas).replace('inf', 'np.inf')
+        return self._property('signs({})'.format(sigmas))
     
-    def flatten_attribute_output(self, attribute):
+    def flatten_property_output(self, attribute):
         """Separate the list elements from the output of the given attribute."""
         df = eval('self.{}'.format(attribute))
         df1, df2 = df.copy(), df.copy()
@@ -1815,12 +1839,14 @@ class RichSeries(pd.Series):
                           self.index) for i in (0,1)]
     @property
     def prop_scores(self):
-        return [pd.Series(rich_array(self.values).prop_scores.T[i].T,
-                          self.index) for i in (0,1)]
+        return pd.Series(rich_array(self.values).prop_scores, self.index)
     
-    def intervals(self, sigmas=defaultparams['sigmas for interval']):
+    def intervals(self, sigmas=defaultparams['sigmas for intervals']):
         return [pd.Series(rich_array(self.values).intervals(sigmas).T[i].T,
                           self.index) for i in (0,1)]
+            
+    def signs(self, sigmas=defaultparams['sigmas for intervals']):
+        return pd.Series(rich_array(self.values).signs(sigmas), self.index)
     
     def set_params(self, params):
         data = self.values.view(RichArray)
@@ -1933,7 +1959,7 @@ def divide_two_rich_values(x, y):
     z.min_exp = min_exp
     return z
 
-def greater(x, y, sigmas=defaultparams['sigmas for interval']):
+def greater(x, y, sigmas=defaultparams['sigmas for intervals']):
     """Determine if a rich value/array (x) is greater than another one (y)."""
     are_single_values = all([type(var) is str
                              or not hasattr(var, '__iter__') for var in (x,y)])
@@ -2010,7 +2036,7 @@ def equiv(x, y, sigmas=defaultparams['sigmas for overlap']):
     return output
 
 def greater_equiv(x, y,
-                  sigmas_interval=defaultparams['sigmas for interval'],
+                  sigmas_interval=defaultparams['sigmas for intervals'],
                   sigmas_overlap=defaultparams['sigmas for overlap']):
     """Check if a rich value/array is greater or equivalent than another one."""
     are_single_values = all([type(var) is str
@@ -2035,7 +2061,7 @@ def greater_equiv(x, y,
     return output
 
 def less_equiv(x, y,
-               sigmas_interval=defaultparams['sigmas for interval'],
+               sigmas_interval=defaultparams['sigmas for intervals'],
                sigmas_overlap=defaultparams['sigmas for overlap']):
     """Check if a rich value/array is less or equivalent than another one."""
     are_single_values = all([type(var) is str
