@@ -37,7 +37,7 @@ IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 """
 
-__version__ = '3.0.11'
+__version__ = '3.0.12'
 __author__ = 'Andrés Megías Toledano'
 
 import copy
