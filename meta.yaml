@@ -7,7 +7,7 @@ package:
 
 source:
   url: "https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/{{ name }}-{{ version }}.tar.gz"
-  sha256: 7d24a604fcbde1d1189469fbb335168c6353466c7205c9e729480585b870e9a1
+  sha256: 7e681c71e36c714b2bd14446f9d541e890249209c1f14016f7945ee6facf3bb0
 
 build:
   number: 0
@@ -28,13 +28,13 @@ requirements:
     - matplotlib
 
 about:
-  home: "https://github.com/andresmegias/richvalues"
+  home: "https://github.com/andresmegias/richvalues/"
   license: BSD-3-Clause
   license_family: BSD
   license_file: LICENSE
   summary: "Python library for working with uncertainties and upper/lower limits"
-  doc_url: 
-  dev_url: 
+  description: "README.md"
+  doc_url: "https://github.com/andresmegias/richvalues/blob/main/userguide.pdf"
 
 extra:
   recipe-maintainers:
