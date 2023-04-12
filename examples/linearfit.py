@@ -19,34 +19,44 @@ import richvalues as rv
 
 #%% Initial data.
 
-np.random.seed(8)
-num_points = 30
-slope_true, offset_true = 2, 10
-dispersion_x, dispersion_y = 0.6, 3
-errorbar_x, errorbar_y = 0.9, 3.6
-x = rv.RichArray(np.random.uniform(0., 40., num_points),
-                 [dispersion_x]*num_points)
-y = rv.RichArray(slope_true * x.mains + offset_true,
-                 [dispersion_y]*num_points)
-x = rv.RichArray(x.sample(),
-                 np.abs(np.random.normal(errorbar_x, errorbar_x/4, num_points)))
-y = rv.RichArray(y.sample(),
-                 np.abs(np.random.normal(errorbar_y, errorbar_y/4, num_points)))
+generate_data = False
 
-inds = np.argsort(x.mains)
-x = x[inds]
-y = y[inds]
-
-x[0].is_uplim = True
-x[0].main += 20*x[0].unc[1]
-y[20].is_uplim = True
-y[20].main += 16*y[20].unc[1]
-y[-1].is_range = True
-x[-1].main += 1*y[-1].unc[1]
-y[-1].unc = [10*y[-1].unc[0], 5*y[1].unc[1]]
-
-data = pd.DataFrame({'x': x, 'y': y})
-data.to_csv('linear-data.csv', index=False)
+if generate_data:
+    
+    seed = np.random.randint(int(1e4))
+    
+    num_points = 30
+    slope_true, offset_true = 2, 10
+    dispersion_x, dispersion_y = 0.6, 3
+    errorbar_x, errorbar_y = 0.9, 3.6
+    
+    np.random.seed(8)
+    x = rv.RichArray(np.random.uniform(0., 40., num_points),
+                     [dispersion_x]*num_points)
+    y = rv.RichArray(slope_true * x.mains + offset_true,
+                     [dispersion_y]*num_points)
+    x = rv.RichArray(x.sample(),
+                     np.abs(np.random.normal(errorbar_x, errorbar_x/4, num_points)))
+    y = rv.RichArray(y.sample(),
+                     np.abs(np.random.normal(errorbar_y, errorbar_y/4, num_points)))
+    
+    inds = np.argsort(x.mains)
+    x = x[inds]
+    y = y[inds]
+    
+    x[0].is_uplim = True
+    x[0].main += 20*x[0].unc[1]
+    y[20].is_uplim = True
+    y[20].main += 16*y[20].unc[1]
+    y[-1].is_range = True
+    x[-1].main += 1*y[-1].unc[1]
+    y[-1].unc = [10*y[-1].unc[0], 5*y[1].unc[1]]
+    
+    data = pd.DataFrame({'x': x, 'y': y})
+    data.to_csv('linear-data.csv', index=False)
+    
+    np.random.seed(seed)
+    
 data = rv.rich_dataframe(pd.read_csv('linear-data.csv'))
 x = rv.rich_array(data['x'].values)
 y = rv.rich_array(data['y'].values)
@@ -77,6 +87,7 @@ xlims = plt.xlim()
 ylims = plt.ylim()
 
 if plot_fit:
+    
     x_ = np.linspace(0, xlims[1], 4)
     plt.plot(x_, slope.main * x_ + offset.main, color=color_fit, lw=1,
              label='median fit')
@@ -84,12 +95,14 @@ if plot_fit:
     plt.plot([], [], alpha=0, label='offset: {}'.format(offset.latex()))
     plt.plot([], [], alpha=0, label='dispersion: {}'
              .format(dispersion.latex()))
+    
     if plot_truth:
         plt.plot(x_, slope_true * x_ + offset_true, color=color_truth,
                  label='ground truth', linestyle='--', lw=1)
         plt.plot([], [], alpha=0, label='slope: {}'.format(slope_true))
         plt.plot([], [], alpha=0, label='offset: {}'.format(offset_true))
         plt.plot([], [], alpha=0, label='dispersion: {}'.format(dispersion_y))
+        
     num_curves = min(400, samples.shape[0])
     inds = np.arange(samples.shape[0])
     np.random.shuffle(inds)
