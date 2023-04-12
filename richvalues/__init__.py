@@ -37,7 +37,7 @@ IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 """
 
-__version__ = '3.0.13'
+__version__ = '3.0.14'
 __author__ = 'Andrés Megías Toledano'
 
 import copy
@@ -2883,7 +2883,7 @@ def function_with_rich_values(function, args,
         of vectorization. The default is False.
     len_samples : int, optional
         Size of the samples of the arguments. The default is the number of
-        arguments times the default size of samples (8000).
+        arguments times the default size of samples (12000).
     domain : list (float), optional
         Domain of the result. If not specified, it will be estimated
         automatically.
@@ -3663,3 +3663,4 @@ center_and_uncertainties = center_and_uncs
 is_not_a_number = is_nan = isnan
 is_infinite = is_inf = isinf
 is_finite = is_finite = isfinite
+
