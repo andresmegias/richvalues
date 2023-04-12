@@ -19,5 +19,5 @@ Alternatively, you can use the Conda package installer:
 conda install richvalues -c richvalues
 ~~~
 ## Links
-- Library project on PyPI: https://pypi.org/project/richvalues.
-- Library project on Anaconda website: https://anaconda.org/richvalues/richvalues.
+- Library project on PyPI: https://pypi.org/project/richvalues/.
+- Library project on Anaconda website: https://anaconda.org/richvalues/richvalues/.
