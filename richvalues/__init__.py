@@ -1461,7 +1461,7 @@ class RichArray(np.ndarray):
         for x in self.flat:
             if 'domain' in params:
                 x.domain = params['domain']
-            for key in ('num_sf', 'number of scientific figures'):
+            for key in ('num_sf', 'number of significant figures'):
                 if key in params:
                     x.num_sf = params[key]
             for key in ('min_exp', 'minimum exponent for scientific notation'):
@@ -1665,7 +1665,7 @@ class RichDataFrame(pd.DataFrame):
     
     def set_params(self, params):
         """Set the rich value parameters of each column of the dataframe."""
-        for param_name in ['domain', 'num_sf', 'min_exp']:
+        for param_name in ['domain', 'num_sf', 'min_exp', 'extra_sf_lim']:
             if param_name in params and type(params[param_name]) is not dict:
                     default_param = params[param_name]
                     params[param_name] = {}
@@ -1678,7 +1678,7 @@ class RichDataFrame(pd.DataFrame):
                 if 'domain' in params and col in params['domain']:
                     for i in range(num_rows):
                         self[col][i].domain = params['domain'][col]
-                for key in ('num_sf', 'number of scientific figures'):
+                for key in ('num_sf', 'number of significant figures'):
                     if key in params and col in params[key]:
                         for i in range(num_rows):
                             self[col][i].num_sf = params[key][col]
@@ -2183,7 +2183,7 @@ def rich_value(text, domain=None):
             for symbol, i0 in zip(['<', '>', '+', '-'], [0, 0, 0, 1]):
                 if symbol in text[i0:]:
                     single_value = False
-            if text in ['nan', 'Nan', 'None']:
+            if text in ['nan', 'Nan', 'inf', 'None']:
                 single_value = False
             if single_value:
                 x, e = text.split(' ')
