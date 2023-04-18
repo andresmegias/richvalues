@@ -4,7 +4,7 @@
 """
 Rich Values Library
 -------------------
-Version 3.0
+Version 3.1
 
 Copyright (C) 2023 - Andrés Megías Toledano
 
@@ -37,7 +37,7 @@ IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 """
 
-__version__ = '3.0.14'
+__version__ = '3.1.0'
 __author__ = 'Andrés Megías Toledano'
 
 import copy
@@ -117,7 +117,7 @@ def round_sf(x,
     if round(float(base), n) <= extra_sf_lim:
         n += 1
     integers = len(y.split('.')[0])
-    if x > 1 and integers >= n:
+    if x >= 1 and integers >= n:
         y = y.replace('.0','')
     digits = str(y).replace('.','')
     for i in range(len(digits)-1):
@@ -213,7 +213,7 @@ def round_sf_unc(x, dx,
             y = '{}e{}'.format(base_y, exp_y)
             dy = '{}e{}'.format(base_dy, exp_y)
     elif dx == 0:
-        y = round_sf(x, n+1, min_exp, extra_sf_lim)
+        y = round_sf(x, n, min_exp, extra_sf_lim)
         dy = '0e0'
     else:
         y = 'nan'
@@ -287,7 +287,7 @@ class RichValue():
     A class to store a value with uncertainties or with upper/lower limits.
     """
     
-    def __init__(self, main=None, unc=0, is_lolim=False, is_uplim=False,
+    def __init__(self, main=None, unc=0., is_lolim=False, is_uplim=False,
                  is_range=False, domain=defaultparams['domain'], **kwargs):
         """
         Parameters
@@ -344,11 +344,9 @@ class RichValue():
             if main_or[0] <= domain[0] and main_or[1] < domain[1]:
                 is_uplim = True
                 main = main[1]
-                unc = 0
             elif main_or[1] >= domain[1] and main_or[0] > domain[0]:
                 is_lolim = True
                 main = main[0]
-                unc = 0
             else:
                 is_range = True
             if is_lolim and is_uplim:
@@ -356,7 +354,6 @@ class RichValue():
                 main = domain
             if main == domain:
                 main = np.nan
-                unc = 0
                 is_range = False
             if is_range:
                 unc = (main[1] - main[0]) / 2
@@ -367,8 +364,9 @@ class RichValue():
             unc = [unc, unc]
         if any(np.isinf(unc)):
             main = np.nan
-            unc = [0, 0]
-        unc = np.nan_to_num(unc, nan=0)
+        if is_lolim or is_uplim or not np.isfinite(main):
+            unc = [np.nan]*2
+        
         if not np.isnan(main) and not domain[0] <= main <= domain[1]:
             raise Exception('Invalid main value {} for domain {}.'
                             .format(main, domain))
@@ -425,6 +423,7 @@ class RichValue():
         self.domain = domain
         self.num_sf = defaultparams['number of significant figures']
         self.min_exp = defaultparams['minimum exponent for scientific notation']
+        self.extra_sf_lim = defaultparams['limit for extra significant figure']
         self.vars = [expression]
         self.expression = expression
         
@@ -483,12 +482,12 @@ class RichValue():
         m, b = self.main, self.domain
         a = [m - b[0], b[1] - m]
         return a
-    @property        
+    @property
     def rel_ampl(self):
         """Relative amplitudes"""
         if self.is_centr:
             s, a = self.unc, self.ampl
-            with np.errstate(divide='ignore'):
+            with np.errstate(divide='ignore', invalid='ignore'):
                 a_s = list(np.array(a) / np.array(s))
         else:
             a_s = [np.nan]*2
@@ -548,7 +547,7 @@ class RichValue():
         return interv
     
     def sign(self, sigmas=np.inf):
-        """Sign of the richvalue."""
+        """Sign of the rich value."""
         interv = self.interval(sigmas)
         signs_interv = np.sign(interv)
         if all(signs_interv == 0):
@@ -561,9 +560,9 @@ class RichValue():
             s = np.nan
         return s
   
-    def set_lims_factor(self, factor=4.):
+    def set_lim_unc(self, factor=4.):
         """Set uncertainties of limits with respect to cetral values."""
-        if self.is_lolim or self.is_uplim:
+        if self.is_lim:
             self.unc = [self.main / factor, self.main / factor]
         
     def _format_as_rich_value(self):
@@ -574,10 +573,14 @@ class RichValue():
         domain = self.domain
         is_range = self.is_range
         min_exp = self.min_exp
-        extra_sf_lim = defaultparams['limit for extra significant figure']
+        extra_sf_lim = self.extra_sf_lim
         x = copy.copy(main)
         dx = copy.copy(unc)
         n = copy.copy(self.num_sf)
+        try:
+            range_bound = self.range_bound
+        except:
+            range_bound = False
         use_exp = True
         if ((float(x) > float(max(dx))
              and abs(np.floor(_log10(abs(float(x))))) < min_exp)
@@ -594,7 +597,10 @@ class RichValue():
             x = main
             dx1, dx2 = unc
             if not self.is_lim:
-                y, (dy1, dy2) = round_sf_uncs(x, [dx1, dx2], n, min_exp)
+                if dx1 == dx2 == 0 and not range_bound:
+                    n += 1
+                y, (dy1, dy2) = round_sf_uncs(x, [dx1, dx2], n,
+                                              min_exp, extra_sf_lim)
                 if 'e' in y:
                     y, a = y.split('e')
                     a = int(a)
@@ -614,7 +620,7 @@ class RichValue():
                 if not use_exp:
                     text = text.replace(' e0','')
             else:
-                y = round_sf(x, n, min_exp)
+                y = round_sf(x, n, min_exp, extra_sf_lim)
                 if 'e' in y:
                     y, a = y.split('e')
                     a = int(a)
@@ -632,6 +638,7 @@ class RichValue():
                     z = RichValue(x, dx, is_lolim, is_uplim, is_range, domain)
                     z.num_sf = n
                     z.min_exp = np.inf
+                    z.extra_sf_lim = extra_sf_lim
                     text = str(z)
             else:
                 text = text.replace(' e0','')
@@ -642,6 +649,8 @@ class RichValue():
             x2 = RichValue(main + unc[1], domain=domain)
             x1.min_exp = min_exp
             x2.min_exp = min_exp
+            x1.range_bound = True
+            x2.range_bound = True
             text = '{} -- {}'.format(x1, x2)
         return text
         
@@ -661,7 +670,7 @@ class RichValue():
         is_uplim = self.is_uplim
         min_exp = self.min_exp
         is_range = self.is_range
-        extra_sf_lim = defaultparams['limit for extra significant figure']
+        extra_sf_lim = self.extra_sf_lim
         use_exp = True
         x = copy.copy(main)
         dx = copy.copy(unc)
@@ -681,38 +690,43 @@ class RichValue():
         is_numeric = False if str(main) in non_numerics else True
         if is_numeric:
             if not is_range:
-                _, unc_r = round_sf_uncs(x, dx, n)
+                _, unc_r = round_sf_uncs(x, dx, n, min_exp, extra_sf_lim)
                 unc_r = np.array(unc_r, float)
             if not is_range and not use_exp:
                 if not (is_lolim or is_uplim):
                     if unc_r[0] == unc_r[1]:
                         if unc_r[0] == unc_r[1] == 0:
-                            y = round_sf(x, n+1, np.inf)
+                            y = round_sf(x, n+1, np.inf, extra_sf_lim)
                             text = '${}$'.format(y)
                         else:
-                            y, dy = round_sf_unc(x, dx[0], n, min_exp)
+                            y, dy = round_sf_unc(x, dx[0], n,
+                                                 min_exp, extra_sf_lim)
                             text = '${} \pm {}$'.format(y, dy)
                     else:
-                        y, dy = round_sf_uncs(x, dx, n, min_exp)
+                        y, dy = round_sf_uncs(x, dx, n, min_exp, extra_sf_lim)
                         text = '$'+y + '_{-'+dy[0]+'}^{+'+dy[1]+'}$'
                 else:
                     if is_lolim:
                         sign = '>'
                     elif is_uplim:
                         sign = '<'
-                    y = round_sf(x, n, min_exp)
+                    y = round_sf(x, n, min_exp, extra_sf_lim)
                     text = '${} {}$'.format(sign, y)
             elif not is_range and use_exp:
                 if not (is_lolim or is_uplim):
                     if unc_r[0] == unc_r[1]:
                         if unc_r[0] == unc_r[1] == 0:
-                            y = round_sf(x, n+1, min_exp)
-                            y, a = y.split('e') if 'e' in y else y, '0'
+                            y = round_sf(x, n+1, min_exp, extra_sf_lim)
+                            if 'e' in y:
+                                y, a = y.split('e')
+                            else:
+                                a = '0'
                             a = str(int(a))
                             text = ('${} {}'.format(y, mult_symbol)
                                     + ' 10^{'+a+'}$')
                         else:
-                            y, dy = round_sf_unc(x, dx[0], n, min_exp)
+                            y, dy = round_sf_unc(x, dx[0], n,
+                                                 min_exp, extra_sf_lim)
                             if 'e' in y:
                                 y, a = y.split('e')
                                 dy, a = dy.split('e')
@@ -722,7 +736,8 @@ class RichValue():
                             text = ('$({} \pm {})'.format(y, dy)
                                      + mult_symbol + '10^{'+a+'}$')
                     else:
-                        y, dy = round_sf_uncs(x, [dx[0], dx[1]], n, min_exp)
+                        y, dy = round_sf_uncs(x, [dx[0], dx[1]], n,
+                                              min_exp, extra_sf_lim)
                         if 'e' in y:
                             y, a = y.split('e')
                             dy1, a = dy[0].split('e')
@@ -738,7 +753,7 @@ class RichValue():
                         symbol = '>'
                     elif is_uplim:
                         symbol = '<'
-                    y = round_sf(x, n, min_exp=0)
+                    y = round_sf(x, n, min_exp=0, extra_sf_lim=extra_sf_lim)
                     y, a = y.split('e')
                     a = str(int(a))
                     text = ('${} {} {}'.format(symbol, y, mult_symbol)
@@ -751,6 +766,7 @@ class RichValue():
                                       is_range, domain)
                         y.num_sf = n
                         y.min_exp = np.inf
+                        y.extra_sf_lim = extra_sf_lim
                         text = y.latex(dollars, mult_symbol)
             else:
                 x1 = RichValue(main - unc[0], domain=domain)
@@ -766,9 +782,29 @@ class RichValue():
             text = text.replace('$','')
         return text
    
+    def __neg__(self):
+        main = copy.copy(self.main)
+        unc = copy.copy(self.unc)
+        domain = copy.copy(self.domain)
+        if not self.is_interv:
+            x = -main
+        else:
+            x1, x2 = self.interval()
+            x = [-x2, -x1]
+        dx = np.abs(unc)
+        domain = [-domain[0], -domain[1]]
+        domain = [min(domain), max(domain)]
+        new_rval = RichValue(x, dx, domain=domain)
+        new_rval.num_sf = self.num_sf
+        new_rval.min_exp = self.min_exp
+        new_rval.extra_sf_lim = self.extra_sf_lim
+        new_rval.vars = self.vars
+        new_rval.expression = '-({})'.format(self.expression)
+        return new_rval
+    
     def __abs__(self):
         sigmas = defaultparams['sigmas to use approximate '
-                       + 'uncertainty propagation']
+                               + 'uncertainty propagation']
         x = copy.copy(self.main)
         dx = copy.copy(self.unc)
         domain = copy.copy(self.domain)
@@ -793,24 +829,10 @@ class RichValue():
                 x1 = 0
                 new_rval = RichValue([x1, x2], dx, domain=domain)
         new_rval.domain[0] = max(0, new_rval.domain[0])
+        new_rval.num_sf = self.num_sf
+        new_rval.min_exp = self.min_exp
+        new_rval.extra_sf_lim = self.extra_sf_lim
         new_rval.expression = 'abs({})'.format(self.expression)
-        return new_rval
-   
-    def __neg__(self):
-        main = copy.copy(self.main)
-        unc = copy.copy(self.unc)
-        domain = copy.copy(self.domain)
-        if not self.is_interv:
-            x = -main
-        else:
-            x1, x2 = self.interval()
-            x = [-x2, -x1]
-        dx = np.abs(unc)
-        domain = [-domain[0], -domain[1]]
-        domain = [min(domain), max(domain)]
-        new_rval = RichValue(x, dx, domain=domain)
-        new_rval.vars = self.vars
-        new_rval.expression = '-({})'.format(self.expression)
         return new_rval
     
     def __add__(self, other):
@@ -838,6 +860,9 @@ class RichValue():
                                          self.is_range, self.domain)
                 else:
                     new_rval = RichValue(0, domain=self.domain)
+                new_rval.num_sf = self.num_sf
+                new_rval.min_exp = self.min_exp
+                new_rval.extra_sf_lim = self.extra_sf_lim
         else:
             vars_str = ','.join(variables)
             function = eval('lambda {}: {}'.format(vars_str, expression))
@@ -893,6 +918,7 @@ class RichValue():
                                          self.is_range, domain)
                     new_rval.num_sf = self.num_sf
                     new_rval.min_exp = self.min_exp
+                    new_rval.extra_sf_lim = self.extra_sf_lim
                 else:
                     new_rval = RichValue(0, domain=self.domain)
         else:
@@ -941,8 +967,6 @@ class RichValue():
                         domain = [domain1, domain2]
                     new_rval = RichValue(x, dx, self.is_lolim, self.is_uplim,
                                          self.is_range, domain)
-                    new_rval.num_sf = self.num_sf
-                    new_rval.min_exp = self.min_exp
                 else:
                     if type(other_) is not RichValue:
                         other_domain = (other.domain if type(other)
@@ -965,6 +989,9 @@ class RichValue():
                     else:
                         domain = (sign * abs(self)).domain
                     new_rval = RichValue(value, domain=domain)
+                new_rval.num_sf = self.num_sf
+                new_rval.min_exp = self.min_exp
+                new_rval.extra_sf_lim = self.extra_sf_lim
         else:
             vars_str = ','.join(variables)
             function = eval('lambda {}: {}'.format(vars_str, expression))
@@ -1008,10 +1035,11 @@ class RichValue():
                         domain = [domain1, domain2]
                     new_rval = RichValue(x, dx, self.is_lolim, self.is_uplim,
                                          self.is_range, domain)
-                    new_rval.num_sf = self.num_sf
-                    new_rval.min_exp = self.min_exp
                 else:
                     new_rval = RichValue(0, domain=self.domain)
+                new_rval.num_sf = self.num_sf
+                new_rval.min_exp = self.min_exp
+                new_rval.extra_sf_lim = self.extra_sf_lim
         else:
             vars_str = ','.join(variables)
             function = eval('lambda {}: {}'.format(vars_str, expression))
@@ -1052,7 +1080,6 @@ class RichValue():
                                                 [self, other_], domain=domain)
                 else:
                     new_rval = RichValue(0)
-                    new_rval.num_sf = self.num_sf
             elif (type(other) is not RichValue and self.prop_score > sigmas):
                 x = main ** other
                 dx = np.abs(x * other * np.array(unc) / main)
@@ -1071,12 +1098,14 @@ class RichValue():
                     domain = [-np.inf, np.inf]
                 new_rval = RichValue(x, dx, self.is_lolim, self.is_uplim,
                                      domain=domain)
-                new_rval.num_sf = self.num_sf
             else:
                 if (type(other) is RichValue and other.domain[0] < 0
                         and not np.isinf(other.main)):
                     print('Warning: Domain of exponent should be positive.')
                 new_rval = RichValue(np.nan)
+            new_rval.num_sf = self.num_sf
+            new_rval.min_exp = self.min_exp
+            new_rval.extra_sf_lim = self.extra_sf_lim
         else:
             vars_str = ','.join(variables)
             function = eval('lambda {}: {}'.format(vars_str, expression))
@@ -1207,14 +1236,19 @@ class RichValue():
     def is_finite_range(self, x): self.is_range = x
     
     @property
-    def number_of_scientific_figures(self): return self.num_sf
-    @number_of_scientific_figures.setter
-    def number_of_scientific_figures(self, x): self.num_sf = x 
+    def number_of_significant_figures(self): return self.num_sf
+    @number_of_significant_figures.setter
+    def number_of_significant_figures(self, x): self.num_sf = x
     
     @property
     def minimum_exponent_for_scientific_notation(self): return self.min_exp
     @minimum_exponent_for_scientific_notation.setter
     def minimum_exponent_for_scientific_notation(self, x): self.min_exp = x
+    
+    @property
+    def limit_for_extra_significant_figure(self): return self.extra_sf_lim
+    @limit_for_extra_significant_figure.setter
+    def limit_for_extra_significant_figure(self, x): self.extra_sf = x
     
     @property
     def variables(self): return self.vars
@@ -1235,7 +1269,7 @@ class RichValue():
     is_infinite = is_inf
     # Method acronyms.
     probability_density_function = pdf
-    set_limits_factor = set_lims_factor
+    set_limit_uncertainty = set_lim_unc
 
 class RichArray(np.ndarray):
     """
@@ -1289,25 +1323,24 @@ class RichArray(np.ndarray):
         
         mains = np.array(mains)
         if uncs is None:
-            uncs = np.zeros((*mains.shape, 2))
+            uncs = 0.
         if are_lolims is None:
-            are_lolims = np.zeros(mains.shape, bool)
+            are_lolims = False
         if are_uplims is None:
-            are_uplims = np.zeros(mains.shape, bool)
+            are_uplims = False
         if are_ranges is None:
-            are_ranges = np.zeros(mains.shape, bool)
+            are_ranges = False
         if domains is None:
             domains = (np.array([[-np.inf, np.inf] for x in mains.flat])
-                       .reshape((*mains.shape, 2)))
-            
+                       .reshape((*mains.shape, 2)))  
         uncs = np.array(uncs)
         are_lolims = np.array(are_lolims)
         are_uplims = np.array(are_uplims)
         are_ranges = np.array(are_ranges)
         domains = np.array(domains)
-        array = np.empty(mains.size, object)
+
         if uncs.size == 1:
-            uncs = uncs * np.ones((*mains.shape, 2))
+            uncs = uncs * np.ones((*mains.shape, 2), float)
         elif len(uncs) == 2 and type(uncs[0]) is not np.ndarray:
             uncs = np.array([uncs[0] * np.ones(mains.shape),
                              uncs[1] * np.ones(mains.shape)])
@@ -1315,6 +1348,12 @@ class RichArray(np.ndarray):
             uncs = uncs.transpose()
         elif uncs.shape == mains.shape:
             uncs = np.array([[uncs]]*2).reshape((2, *mains.shape))
+        if are_lolims.size == 1:
+            are_lolims = are_lolims * np.ones(mains.shape, bool)
+        if are_uplims.size == 1:
+            are_uplims = are_uplims * np.ones(mains.shape, bool)
+        if are_ranges.size == 1:
+            are_ranges = are_ranges * np.ones(mains.shape, bool)
         if len(domains) == 2 and type(domains[0]) is not np.ndarray:
             domains = np.array([domains[0] * np.ones(mains.shape),
                                 domains[1] * np.ones(mains.shape)])
@@ -1331,6 +1370,7 @@ class RichArray(np.ndarray):
         are_ranges_flat = are_ranges.flatten()
         domains_flat = domains.flatten()
         offset = len(uncs_flat) // 2
+        array = np.empty(mains.size, RichValue)
         for i in range(mains.size):
             main = mains_flat[i]
             unc = [uncs_flat[i], uncs_flat[i+offset]]
@@ -1427,8 +1467,11 @@ class RichArray(np.ndarray):
             for key in ('min_exp', 'minimum exponent for scientific notation'):
                 if key in params:
                     x.min_exp = params[key]
+            for key in ('extra_sf_lim', 'limit for extra significant figure'):
+                if key in params:
+                    x.extra_sf_lim = params[key]
     
-    def set_lims_factor(self, factor=4.):
+    def set_lims_uncs(self, factor=4.):
         """Set uncertainties of limits with respect to central values."""
         c = factor
         if not hasattr(c, '__iter__'):
@@ -1491,7 +1534,7 @@ class RichArray(np.ndarray):
     normalized_uncertainties = norm_uncs
     propagation_scores = prop_scores
     # Method acronyms.
-    set_limits_factor = set_lims_factor
+    set_limits_uncertainties = set_lims_uncs
     set_parameters = set_params
 
 class RichDataFrame(pd.DataFrame):
@@ -1585,9 +1628,9 @@ class RichDataFrame(pd.DataFrame):
         sigmas = str(sigmas).replace('inf', 'np.inf')
         return self._property('signs({})'.format(sigmas))
     
-    def flatten_property_output(self, attribute):
-        """Separate the list elements from the output of the given attribute."""
-        df = eval('self.{}'.format(attribute))
+    def flatten_property(self, name):
+        """Separate the list elements from the given attribute/method output."""
+        df = eval('self.{}'.format(name))
         df1, df2 = df.copy(), df.copy()
         columns = df.columns
         are_lists = False
@@ -1644,6 +1687,12 @@ class RichDataFrame(pd.DataFrame):
                     if key in params and col in params[key]:
                         for i in range(num_rows):
                             self[col][i].min_exp = params[key][col]
+                for key in ('extra_sf_lim',
+                            'limit for extra significant figure'):
+                    if key in params and col in params[key]:
+                        for i in range(num_rows):
+                            self[col][i].extra_sf_lim = params[key][col]
+
     
     def create_column(self, function, columns, **kwargs):
         """
@@ -1731,22 +1780,23 @@ class RichDataFrame(pd.DataFrame):
             output = text
         return output
 
-    def set_lims_factors(self, limits_factors={}):
+    def set_lims_uncs(self, factors={}):
         """Set the uncertainties of limits with respect to central values."""
-        if limits_factors == {}:
-            limits_factors = 4.
-        if type(limits_factors) is not dict:
-            limits_factors = {col: limits_factors for col in self}
+        if factors == {}:
+            factors = 4.
+        if type(factors) is not dict:
+            factors = {col: factors for col in self}
         for i,row in self.iterrows():
-            for col in limits_factors:
+            for col in factors:
                 if 'RichValue' in str(type(self.at[i,col])):
                     entry = self.at[i,col]
-                    c = limits_factors[col]
-                    if not hasattr(c, '__iter__'):
-                        c = [c, c]
-                    cl, cu = c
-                    c = cl if entry.is_lolim else cu
-                    self.at[i,col].set_lims_factor(c)
+                    if entry.is_lim:
+                        c = factors[col]
+                        if not hasattr(c, '__iter__'):
+                            c = [c, c]
+                        cl, cu = c
+                        c = cl if entry.is_lolim else cu
+                        self.at[i,col].set_lim_unc(c)
     
     # Attribute acronyms.
     main_values = mains
@@ -1766,7 +1816,7 @@ class RichDataFrame(pd.DataFrame):
     # Method acronyms.
     get_parameters = get_params
     set_parameters = set_params
-    set_limits_factors = set_lims_factors
+    set_limits_factors = set_lims_uncs
 
 class RichSeries(pd.Series):
     """A class to store a series with the RichArray methods."""
@@ -1853,9 +1903,9 @@ class RichSeries(pd.Series):
         data.set_params(params)
         self.update(pd.Series(data, self.index))
     
-    def set_lims_factor(self, factor=4.):
+    def set_lims_uncs(self, factor=4.):
         data = self.values.view(RichArray)
-        data.set_lims_factor(factor)
+        data.set_lims_uncs(factor)
         self.update(pd.Series(data, self.index))
 
     def latex(self, **kwargs):
@@ -1883,7 +1933,7 @@ class RichSeries(pd.Series):
     normalized_uncertainties = norm_uncs
     propagation_scores = prop_scores
     # Method acronyms.
-    set_limits_factor = set_lims_factor
+    set_limits_uncertainties = set_lims_uncs
     set_parameters = set_params
     
 
@@ -2105,6 +2155,8 @@ def rich_value(text, domain=None):
     """
     
     domain_or = copy.copy(domain)
+    default_num_sf = defaultparams['number of significant figures']
+    default_extra_sf_lim = defaultparams['limit for extra significant figure']
     
     def parse_as_rich_value(text):
         """Obtain the properties of the input text as a rich value."""
@@ -2120,8 +2172,13 @@ def rich_value(text, domain=None):
         if not '--' in text:
             if text.startswith('+'):
                 text = text[1:]
-            if 'e' not in text:
+            if 'e' in text:
+                min_exp = int(text.split('e')[1])
+            else:
+                min_exp = np.inf
                 text = '{} e0'.format(text)
+            min_exp = min(min_exp, defaultparams['minimum exponent for '
+                                                 + 'scientific notation'])
             single_value = True
             for symbol, i0 in zip(['<', '>', '+', '-'], [0, 0, 0, 1]):
                 if symbol in text[i0:]:
@@ -2173,6 +2230,35 @@ def rich_value(text, domain=None):
                 else:
                     x = 'nan'
                     dx1, dx2 = '0', '0'
+            if (not (is_lolim or is_uplim)
+                    and not (float(dx1) == float(dx2) == 0)):
+                dx1, dx2 = str(dx1), str(dx2)
+                dx1_ = dx1.split('e')[0]
+                dx2_ = dx2.split('e')[0]
+                for i in reversed(range(len(dx1_))):
+                    dx1_ = dx1_.replace('0.'+'0'*i, '')
+                dx1_ = dx1_.replace('.','')
+                for i in reversed(range(len(dx2_))):
+                    dx2_ = dx2_.replace('0.'+'0'*i, '')
+                dx2_ = dx2_.replace('.','')
+                n1 = len(dx1_)
+                n2 = len(dx2_)
+                num_sf = max(1, n1, n2)
+                val = np.array([dx1, dx2])[np.argmax([n1, n2])]
+            else:
+                x_ = x.split('e')[0]
+                for i in reversed(range(len(x_))):
+                    x_ = x_.replace('0.'+'0'*i, '')
+                x_ = x_.replace('.','')
+                n = len(x_)
+                num_sf = n
+                val = x
+            num_sf = max(1, num_sf)
+            extra_sf_lim = default_extra_sf_lim
+            base = float('{:e}'.format(float(val)).split('e')[0])
+            if base <= default_extra_sf_lim:
+                if num_sf < default_num_sf + 1:
+                    extra_sf_lim = base - 1e-8
             x = x.replace('e0','')
             main = float(x)
             unc = [float(dx1), float(dx2)]
@@ -2180,20 +2266,26 @@ def rich_value(text, domain=None):
         else:
             text = text.replace(' --','--').replace('-- ','--')
             x1, x2 = text.split('--')
-            x1, _, _, _, _, domain_1 = parse_as_rich_value(x1)
-            x2, _, _, _, _, domain_2 = parse_as_rich_value(x2)
+            x1, _, _, _, _, domain_1, me1, el1 = parse_as_rich_value(x1)
+            x2, _, _, _, _, domain_2, me2, el2 = parse_as_rich_value(x2)
             main = [x1, x2]
             unc = 0
             is_lolim, is_uplim, is_range = False, False, True
             domain = [min(domain_1[0], domain_2[0]),
                       max(domain_1[1], domain_2[1])]
-        return main, unc, is_lolim, is_uplim, is_range, domain
+            min_exp = min(me1, me2)
+            extra_sf_lim = max(el1, el2)
+        return (main, unc, is_lolim, is_uplim, is_range, domain,
+                min_exp, extra_sf_lim)
     
     text = str(text)
-    main, unc, is_lolim, is_uplim, is_range, domain = parse_as_rich_value(text)
+    main, unc, is_lolim, is_uplim, is_range, domain, min_exp, extra_sf_lim = \
+                                                      parse_as_rich_value(text)
     if domain_or is not None:
         domain = domain_or
     y = RichValue(main, unc, is_lolim, is_uplim, is_range, domain)
+    y.min_exp = min_exp
+    y.extra_sf_lim = extra_sf_lim
     return y
 
 def rich_array(array, domain=None):
@@ -2218,6 +2310,7 @@ def rich_array(array, domain=None):
     shape = array.shape
     mains, uncs, are_lolims, are_uplims, are_ranges, domains = \
         [], [], [], [], [], []
+    min_exps, extra_sf_lims = [], []
     for element in array.flat:
         x = (element if type(element) is RichValue
              else rich_value(element, domain))
@@ -2227,6 +2320,8 @@ def rich_array(array, domain=None):
         are_uplims += [x.is_uplim]
         are_ranges += [x.is_range]
         domains += [x.domain]
+        min_exps += [x.min_exp]
+        extra_sf_lims += [x.extra_sf_lim]
     mains = np.array(mains).reshape(shape)
     uncs = np.array(uncs)
     uncs = (np.array([uncs[:,0].reshape(shape).tolist(),
@@ -2241,6 +2336,9 @@ def rich_array(array, domain=None):
                .transpose().reshape((*shape, 2)))
     new_array = RichArray(mains, uncs, are_lolims, are_uplims, are_ranges,
                           domains)
+    min_exp = min(min_exps)
+    extra_sf_lim = max(extra_sf_lims)
+    new_array.set_params({'min_exp': min_exp, 'extra_sf_lim': extra_sf_lim})
     return new_array
 
 def rich_dataframe(df, domains=None):
@@ -2845,8 +2943,8 @@ def evaluate_distr(distr, domain=[-np.inf,np.inf], function=None, args=None,
     return z
 
 def function_with_rich_values(function, args,
-        unc_function=None, is_vectorizable=False,
-        len_samples=None, domain=None, consider_intervs=None,
+        unc_function=None, is_vectorizable=False, len_samples=None,
+        optimize_len_samples=False, consider_intervs=None, domain=None,
         sigmas=defaultparams['sigmas to use approximate '
                              + 'uncertainty propagation'],
         use_sigma_combs=defaultparams['use 1-sigma combinations to '
@@ -2884,13 +2982,17 @@ def function_with_rich_values(function, args,
     len_samples : int, optional
         Size of the samples of the arguments. The default is the number of
         arguments times the default size of samples (12000).
-    domain : list (float), optional
-        Domain of the result. If not specified, it will be estimated
-        automatically.
+    optimize_len_samples : bool, optional
+        If True, the samples size will be reduced up to the half if the minimum
+        propagation score of the arguments is high enough.
+        The default is False.
     consider_intervs : bool, optional
         If True, the resulting distribution could be interpreted as an upper/
         lower limit or a constant range of values. The default is None (it is
         False if all of the arguments are centered values).
+    domain : list (float), optional
+        Domain of the result. If not specified, it will be estimated
+        automatically.
     sigmas : float, optional
         Threshold to apply uncertainty propagation. The value is the distance
         to the bounds of the domain relative to the uncertainty.
@@ -2948,8 +3050,6 @@ def function_with_rich_values(function, args,
         if len(args) > 1 and len(common_vars) > 0:
             unc_function = None
     
-    if len_samples is None:
-        len_samples = int(len(args)**0.5 * defaultparams['size of samples'])
     num_sf = max([arg.num_sf for arg in args])
     min_exp = min([arg.min_exp for arg in args])
     if consider_intervs is None:
@@ -3027,6 +3127,14 @@ def function_with_rich_values(function, args,
                     np.max(new_comb[:][k]) - main[k]]
                    for k in range(output_size)]
     else:
+        if len_samples is None:
+            len_samples = int(len(args)**0.5 * defaultparams['size of samples'])
+        if optimize_len_samples:
+            prop_score = min([arg.prop_score for arg in args])
+            lim1, lim2 = 4., 20.
+            if prop_score > lim1:
+                factor = 1. - 0.5 * (min(prop_score,20.)-lim1) / (lim2-lim1)
+                len_samples = int(factor * len_samples)
         args_distr = np.array([arg.sample(len_samples) for arg in args])
         if is_vectorizable:
             new_distr = function(*args_distr)
@@ -3249,7 +3357,6 @@ def errorbar(x, y, lims_factor=None, **kwargs):
     plot : matplotlib.container.ErrorbarContainer
         Matplotib's 'errorbar' output.
     """
-    global num_plots
     def set_kwarg(keyword, default):
         """Set a certain keyword argument with a default value."""
         if keyword in kwargs:
@@ -3278,8 +3385,8 @@ def errorbar(x, y, lims_factor=None, **kwargs):
         lims_factor_x = lim_factor(xc)
     if lims_factor_y is None:
         lims_factor_y = lim_factor(yc)
-    xc.set_lims_factor(lims_factor_x)
-    yc.set_lims_factor(lims_factor_y)
+    xc.set_lims_uncs(lims_factor_x)
+    yc.set_lims_uncs(lims_factor_y)
     plt.plot()
     ax = plt.gca()
     color = ax.plot([])[0].get_color()
@@ -3663,4 +3770,5 @@ center_and_uncertainties = center_and_uncs
 is_not_a_number = is_nan = isnan
 is_infinite = is_inf = isinf
 is_finite = is_finite = isfinite
+
 
