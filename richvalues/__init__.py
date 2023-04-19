@@ -2145,7 +2145,7 @@ def less_equiv(x, y,
         output = output.reshape(x.shape)
     return output
 
-def rich_value(text, domain=None):
+def rich_value(text, domain=None, use_default_extra_sf_lim=False):
     """
     Convert the input text to a rich value.
 
@@ -2155,15 +2155,19 @@ def rich_value(text, domain=None):
         String representing a rich value.
     domain : list (float), optional
         The domain of the rich value, that is, the minimum and maximum
-        values that it can take. The default is the union of the domains of all
-        the elements of the resulting rich array.
+        values that it can take. The default is the union of the domains of
+        all the elements of the resulting rich array.
+    use_default_extra_sf_lim : bool, optional
+        If True, the default limit for extra significant figure will be used
+        instead of infering it from the input text. This will reduce the
+        computation time a little bit.
 
     Returns
     -------
     y : rich value
         Resulting rich value.
     """
-    
+
     domain_or = copy.copy(domain)
     default_num_sf = defaultparams['number of significant figures']
     default_extra_sf_lim = defaultparams['limit for extra significant figure']
@@ -2240,35 +2244,38 @@ def rich_value(text, domain=None):
                 else:
                     x = 'nan'
                     dx1, dx2 = '0', '0'
-            if (not (is_lolim or is_uplim)
-                    and not (float(dx1) == float(dx2) == 0)):
-                dx1, dx2 = str(dx1), str(dx2)
-                dx1_ = dx1.split('e')[0]
-                dx2_ = dx2.split('e')[0]
-                for i in reversed(range(len(dx1_))):
-                    dx1_ = dx1_.replace('0.'+'0'*i, '')
-                dx1_ = dx1_.replace('.','')
-                for i in reversed(range(len(dx2_))):
-                    dx2_ = dx2_.replace('0.'+'0'*i, '')
-                dx2_ = dx2_.replace('.','')
-                n1 = len(dx1_)
-                n2 = len(dx2_)
-                num_sf = max(1, n1, n2)
-                val = np.array([dx1, dx2])[np.argmax([n1, n2])]
+            if not use_default_extra_sf_lim:
+                if (not (is_lolim or is_uplim)
+                        and not (float(dx1) == float(dx2) == 0)):
+                    dx1, dx2 = str(dx1), str(dx2)
+                    dx1_ = dx1.split('e')[0]
+                    dx2_ = dx2.split('e')[0]
+                    for i in reversed(range(len(dx1_))):
+                        dx1_ = dx1_.replace('0.'+'0'*i, '')
+                    dx1_ = dx1_.replace('.','')
+                    for i in reversed(range(len(dx2_))):
+                        dx2_ = dx2_.replace('0.'+'0'*i, '')
+                    dx2_ = dx2_.replace('.','')
+                    n1 = len(dx1_)
+                    n2 = len(dx2_)
+                    num_sf = max(1, n1, n2)
+                    val = np.array([dx1, dx2])[np.argmax([n1, n2])]
+                else:
+                    x_ = x.split('e')[0]
+                    for i in reversed(range(len(x_))):
+                        x_ = x_.replace('0.'+'0'*i, '')
+                    x_ = x_.replace('.','')
+                    n = len(x_)
+                    num_sf = n
+                    val = x
+                num_sf = max(1, num_sf)
+                extra_sf_lim = default_extra_sf_lim
+                base = float('{:e}'.format(float(val)).split('e')[0])
+                if base <= default_extra_sf_lim:
+                    if num_sf < default_num_sf + 1:
+                        extra_sf_lim = base - 1e-8
             else:
-                x_ = x.split('e')[0]
-                for i in reversed(range(len(x_))):
-                    x_ = x_.replace('0.'+'0'*i, '')
-                x_ = x_.replace('.','')
-                n = len(x_)
-                num_sf = n
-                val = x
-            num_sf = max(1, num_sf)
-            extra_sf_lim = default_extra_sf_lim
-            base = float('{:e}'.format(float(val)).split('e')[0])
-            if base <= default_extra_sf_lim:
-                if num_sf < default_num_sf + 1:
-                    extra_sf_lim = base - 1e-8
+                extra_sf_lim = default_extra_sf_lim
             x = x.replace('e0','')
             main = float(x)
             unc = [float(dx1), float(dx2)]
@@ -2298,7 +2305,7 @@ def rich_value(text, domain=None):
     y.extra_sf_lim = extra_sf_lim
     return y
 
-def rich_array(array, domain=None):
+def rich_array(array, domain=None, use_default_extra_sf_lim=False):
     """
     Convert the input array to a rich array.
 
@@ -2310,6 +2317,10 @@ def rich_array(array, domain=None):
         The domain of al the entries of the rich array, that is, the minimum
         and maximum values that it can take. If not given, the original domain
         of each entry of the array will be preserved.
+    use_default_extra_sf_lim : bool, optional
+        If True, the default limit for extra significant figure will be used
+        instead of infering it from the input text. This will reduce the
+        computation time a little bit.
 
     Returns
     -------
@@ -2323,7 +2334,7 @@ def rich_array(array, domain=None):
     min_exps, extra_sf_lims = [], []
     for element in array.flat:
         x = (element if type(element) is RichValue
-             else rich_value(element, domain))
+             else rich_value(element, domain, use_default_extra_sf_lim))
         mains += [x.main]
         uncs += [x.unc]
         are_lolims += [x.is_lolim]
@@ -2335,7 +2346,7 @@ def rich_array(array, domain=None):
     mains = np.array(mains).reshape(shape)
     uncs = np.array(uncs)
     uncs = (np.array([uncs[:,0].reshape(shape).tolist(),
-                     uncs[:,1].reshape(shape).tolist()])
+                      uncs[:,1].reshape(shape).tolist()])
             .transpose().reshape((*shape, 2)))
     are_lolims = np.array(are_lolims).reshape(shape)
     are_uplims = np.array(are_uplims).reshape(shape)
@@ -2351,7 +2362,7 @@ def rich_array(array, domain=None):
     new_array.set_params({'min_exp': min_exp, 'extra_sf_lim': extra_sf_lim})
     return new_array
 
-def rich_dataframe(df, domains=None):
+def rich_dataframe(df, domains=None, use_default_extra_sf_lim=False):
     """
     Convert the values of the input dataframe of text strings to rich values.
 
@@ -2362,6 +2373,10 @@ def rich_dataframe(df, domains=None):
     domains : dict (list (float)), optional
         Dictionary containing the domain for each column of the dataframe.
         Instead, a common domain can be directly specified for all the columns.
+    use_default_extra_sf_lim : bool, optional
+        If True, the default limit for extra significant figure will be used
+        instead of infering it from the input text. This will reduce the
+        computation time a little bit.
 
     Returns
     -------
@@ -2387,7 +2402,8 @@ def rich_dataframe(df, domains=None):
                         is_number = False
                         break
                 if is_number:
-                    x = rich_value(new_df.at[i,col], domain)
+                    x = rich_value(new_df.at[i,col], domain,
+                                   use_default_extra_sf_lim)
             if is_rich_value or is_number:
                 new_df.at[i,col] = x
     new_df = RichDataFrame(new_df)
@@ -3782,5 +3798,3 @@ center_and_uncertainties = center_and_uncs
 is_not_a_number = is_nan = isnan
 is_infinite = is_inf = isinf
 is_finite = is_finite = isfinite
-
-
