@@ -1608,6 +1608,8 @@ class RichDataFrame(pd.DataFrame):
     @property
     def are_centrs(self): return self._property('are_centrs')
     @property
+    def centers(self): return self._property('centers')
+    @property
     def rel_uncs(self): return self._property2('rel_uncs')
     @property
     def signals_noises(self): return self._property2('signal_noises')
@@ -1649,7 +1651,7 @@ class RichDataFrame(pd.DataFrame):
     
     def get_params(self):
         """Return the rich value parameters of each column of the dataframe."""
-        domain, num_sf, min_exp = {}, {}, {}
+        domain, num_sf, min_exp, extra_sf_lim = {}, {}, {}, {}
         for col in self:
             x = self[col][0]
             is_rich_value = True if type(x) is RichValue else False
@@ -1657,10 +1659,12 @@ class RichDataFrame(pd.DataFrame):
                            else defaultparams['domain'])
             num_sf[col] = (x.num_sf if is_rich_value else
                            defaultparams['number of significant figures'])
-            min_exp[col] = (x.min_exp if is_rich_value
-                            else defaultparams['minimum exponent for '
-                                               + 'scientific notation'])
-        params = {'domain': domain, 'num_sf': num_sf, 'min_exp': min_exp}
+            min_exp[col] = (x.min_exp if is_rich_value else
+                     defaultparams['minimum exponent for scientific notation'])
+            extra_sf_lim[col] = (x.extra_sf_lim if is_rich_value else
+                           defaultparams['limit for extra significant figure'])
+        params = {'domain': domain, 'num_sf': num_sf, 'min_exp': min_exp,
+                  'extra_sf_lim': extra_sf_lim}
         return params
     
     def set_params(self, params):
@@ -1939,8 +1943,9 @@ class RichSeries(pd.Series):
 
 def add_two_rich_values(x, y):
     """Sum two rich values to get a new one."""
-    num_sf = max(x.num_sf, y.num_sf)
-    min_exp = min(x.min_exp, y.min_exp)
+    num_sf = min(x.num_sf, y.num_sf)
+    min_exp = round(np.mean([x.min_exp, y.min_exp]))
+    extra_sf_lim = max(x.extra_sf_lim, y.extra_sf_lim)
     domain = [x.domain[0] + y.domain[0], x.domain[1] + y.domain[1]]
     sigmas = defaultparams['sigmas to use approximate uncertainty propagation']
     if (not (x.is_interv or y.is_interv)
@@ -1953,12 +1958,14 @@ def add_two_rich_values(x, y):
                                       is_vectorizable=True)
     z.num_sf = num_sf
     z.min_exp = min_exp
+    z.extra_sf_lim = extra_sf_lim
     return z
 
 def multiply_two_rich_values(x, y):
     """Multiply two rich values to get a new one."""
-    num_sf = max(x.num_sf, y.num_sf)
-    min_exp = min(x.min_exp, y.min_exp)
+    num_sf = min(x.num_sf, y.num_sf)
+    min_exp = round(np.mean([x.min_exp, y.min_exp]))
+    extra_sf_lim = max(x.extra_sf_lim, y.extra_sf_lim)
     with np.errstate(divide='ignore', invalid='ignore'):
         domain_combs = [x.domain[0] * y.domain[0], x.domain[0] * y.domain[1],
                         x.domain[1] * y.domain[0], x.domain[1] * y.domain[1]]
@@ -1980,12 +1987,14 @@ def multiply_two_rich_values(x, y):
                                       is_vectorizable=True)
     z.num_sf = num_sf
     z.min_exp = min_exp
+    z.extra_sf_lim = extra_sf_lim
     return z
 
 def divide_two_rich_values(x, y):
     """Divide two rich values to get a new one."""
-    num_sf = max(x.num_sf, y.num_sf)
-    min_exp = min(x.min_exp, y.min_exp)
+    num_sf = min(x.num_sf, y.num_sf)
+    min_exp = round(np.mean([x.min_exp, y.min_exp]))
+    extra_sf_lim = max(x.extra_sf_lim, y.extra_sf_lim)
     with np.errstate(divide='ignore', invalid='ignore'):
         domain_combs = [x.domain[0] * y.domain[0], x.domain[0] * y.domain[1],
                         x.domain[1] * y.domain[0], x.domain[1] * y.domain[1]]
@@ -2007,6 +2016,7 @@ def divide_two_rich_values(x, y):
                                   is_vectorizable=True, sigmas=sigmas)
     z.num_sf = num_sf
     z.min_exp = min_exp
+    z.extra_sf_lim = extra_sf_lim
     return z
 
 def greater(x, y, sigmas=defaultparams['sigmas for intervals']):
@@ -2273,8 +2283,8 @@ def rich_value(text, domain=None):
             is_lolim, is_uplim, is_range = False, False, True
             domain = [min(domain_1[0], domain_2[0]),
                       max(domain_1[1], domain_2[1])]
-            min_exp = min(me1, me2)
-            extra_sf_lim = max(el1, el2)
+            min_exp = round(np.mean([me1, me2]))
+            extra_sf_lim = min(el1, el2)
         return (main, unc, is_lolim, is_uplim, is_range, domain,
                 min_exp, extra_sf_lim)
     
@@ -2336,8 +2346,8 @@ def rich_array(array, domain=None):
                .transpose().reshape((*shape, 2)))
     new_array = RichArray(mains, uncs, are_lolims, are_uplims, are_ranges,
                           domains)
-    min_exp = min(min_exps)
-    extra_sf_lim = max(extra_sf_lims)
+    min_exp = round(np.mean(min_exps))
+    extra_sf_lim = min(extra_sf_lims)
     new_array.set_params({'min_exp': min_exp, 'extra_sf_lim': extra_sf_lim})
     return new_array
 
@@ -3050,8 +3060,9 @@ def function_with_rich_values(function, args,
         if len(args) > 1 and len(common_vars) > 0:
             unc_function = None
     
-    num_sf = max([arg.num_sf for arg in args])
-    min_exp = min([arg.min_exp for arg in args])
+    num_sf = min([arg.num_sf for arg in args])
+    min_exp = round(np.mean([arg.min_exp for arg in args]))
+    extra_sf_lim = max([arg.extra_sf_lim for arg in args])
     if consider_intervs is None:
         consider_intervs = (False if all([arg.is_centr for arg in args])
                             else True)
@@ -3189,6 +3200,7 @@ def function_with_rich_values(function, args,
         new_rval = RichValue(main[k], unc[k], domain=new_domain[k])
         new_rval.num_sf = num_sf
         new_rval.min_exp = min_exp
+        new_rval.extra_sf_lim = extra_sf_lim
         if type(function_or) is str:
             new_rval.vars = variables
             new_rval.expression = expression
