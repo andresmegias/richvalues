@@ -2191,7 +2191,7 @@ def rich_value(text, domain=None, use_default_extra_sf_lim=False):
             if text.startswith('+'):
                 text = text[1:]
             if ' e' in text:
-                min_exp = int(text.split('e')[1])
+                min_exp = abs(int(text.split('e')[1]))
             else:
                 min_exp = np.inf
                 text = '{} e0'.format(text)
