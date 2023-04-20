@@ -514,29 +514,31 @@ class RichValue():
     @property
     def is_nan(self):
         """Not a number value."""
-        isnan = (True if np.isnan(self.main) or any(np.isinf(self.unc))
-                 else False)
+        isnan = np.isnan(np.diff(self.interval(sigmas=np.inf)))
         return isnan
     @property
     def is_inf(self):
         """Infinite value."""
-        isinf = (True if np.isinf(self.main) and not any(np.isinf(self.unc))
-                 else False)
+        isinf = np.isinf(np.diff(self.interval(sigmas=np.inf)))
         return isinf
     @property
     def is_finite(self):
         """Finite value."""
-        isfinite = (True if np.isfinite(self.main)
-                    and all(np.isfinite(self.unc)) else False)
+        isfinite = np.isfinite(np.diff(self.interval(sigmas=np.inf)))
         return isfinite
     
     def interval(self, sigmas=defaultparams['sigmas for intervals']):
         """Interval of possible values of the rich value."""
         if not self.is_interv:
-            ampl1 = sigmas * self.unc[0] if self.unc[0] != 0 else 0
-            ampl2 = sigmas * self.unc[1] if self.unc[1] != 0 else 0
-            interv = [max(self.domain[0], self.main - ampl1),
-                      min(self.domain[1], self.main + ampl2)]
+            if np.isfinite(self.main):
+                ampl1 = sigmas * self.unc[0] if self.unc[0] != 0 else 0
+                ampl2 = sigmas * self.unc[1] if self.unc[1] != 0 else 0
+                interv = [max(self.domain[0], self.main - ampl1),
+                          min(self.domain[1], self.main + ampl2)]
+            elif np.isinf(self.main):
+                interv = [self.main, self.main]
+            elif np.isnan(self.main):
+                interv = [np.nan, np.nan]
         else:
             if self.is_uplim and not self.is_lolim:
                 interv = [self.domain[0], self.main]
@@ -1409,6 +1411,9 @@ class RichArray(np.ndarray):
     def min_exps(self):
         return np.array([x.min_exp for x in self.flat]).reshape(self.shape)
     @property
+    def extra_sf_lims(self):
+        return np.array([x.extra_sf_lim for x in self.flat]).reshape(self.shape)
+    @property
     def are_lims(self):
         return np.array([x.is_lim for x in self.flat]).reshape(self.shape)
     @property
@@ -1522,8 +1527,9 @@ class RichArray(np.ndarray):
     are_lower_limits = are_lolims
     are_upper_limits = are_uplims
     are_finite_ranges = are_ranges
-    numbers_of_scientific_figures = nums_sf
+    numbers_of_significant_figures = nums_sf
     minimum_exponents_for_scientific_notation = min_exps
+    limits_for_extra_significant_figure = extra_sf_lims
     are_limits = are_lims
     are_intervals = are_intervs
     are_centered_values = are_centrs
@@ -1545,22 +1551,28 @@ class RichDataFrame(pd.DataFrame):
     @property
     def _constructor(self):
         return RichDataFrame
-    
     @property
     def _constructor_sliced(self):
         return RichSeries
+    @property
+    def values(self):
+        return pd.DataFrame(self).values.view(RichArray)
 
     def _property(self, name):
         """Apply the input RichArray attribute/method with 1 element."""
         code = [
-            'array = self.values',
-            'shape = array.shape',
-            'types = np.array([type(x) for x in array.flat]).reshape(shape)',
-            'data = np.zeros(shape, object)',
-            'cond = types == RichValue',
-            'data[cond] = rich_array(array[cond]).{}'.format(name),
-            'cond = ~cond',
-            'data[cond] = array[cond]',
+            'try:',
+            '    data = self.values.{}'.format(name),
+            'except:',
+            '    array = self.values',
+            '    shape = array.shape',
+            '    types = (np.array([type(x) for x in array.flat])'
+                       + '.reshape(shape))',
+            '    data = np.zeros(shape, object)',
+            '    cond = types == RichValue',
+            '    data[cond] = array[cond].{}'.format(name),
+            '    cond = ~cond',
+            '    data[cond] = array[cond]',
             'df = pd.DataFrame(data, self.index, self.columns)']
         code = '\n'.join(code)
         output = {}
@@ -1572,13 +1584,14 @@ class RichDataFrame(pd.DataFrame):
         code = [
             'array = self.values',
             'shape = array.shape',
-            'types = np.array([type(x) for x in array.flat]).reshape(shape)',
+            'types = (np.array([type(x) for x in array.flat])'
+                   + '.reshape(shape))',
             'data = np.zeros(shape, object)',
             'cond = types == RichValue',
-            'new_elements = rich_array(array[cond]).{}'.format(name),
+            'new_elements = array[cond].{}'.format(name),
             'new_elements = [[x[0], x[1]] for x in new_elements]',
             'new_subarray = np.frompyfunc(list, 0, 1)'
-            + '(np.empty(cond.sum(), dtype=object))',
+                 + '(np.empty(cond.sum(), dtype=object))',
             'new_subarray[:] = new_elements',
             'data[cond] = new_subarray',
             'cond = ~cond',
@@ -1601,6 +1614,12 @@ class RichDataFrame(pd.DataFrame):
     def are_ranges(self): return self._property('are_ranges')
     @property
     def domains(self): return self._property2('domains')
+    @property
+    def nums_sf(self): return self._property('nums_sf')
+    @property
+    def min_exps(self): return self._property('min_exps')
+    @property
+    def extra_sf_lims(self): return self._property('extra_sf_lims')
     @property
     def are_lims(self): return self._property('are_lims')
     @property
@@ -1648,24 +1667,6 @@ class RichDataFrame(pd.DataFrame):
                     df2.at[i,col] = entry
         output = [df1, df2] if are_lists else df1
         return output
-    
-    def get_params(self):
-        """Return the rich value parameters of each column of the dataframe."""
-        domain, num_sf, min_exp, extra_sf_lim = {}, {}, {}, {}
-        for col in self:
-            x = self[col][0]
-            is_rich_value = True if type(x) is RichValue else False
-            domain[col] = (x.domain if is_rich_value
-                           else defaultparams['domain'])
-            num_sf[col] = (x.num_sf if is_rich_value else
-                           defaultparams['number of significant figures'])
-            min_exp[col] = (x.min_exp if is_rich_value else
-                     defaultparams['minimum exponent for scientific notation'])
-            extra_sf_lim[col] = (x.extra_sf_lim if is_rich_value else
-                           defaultparams['limit for extra significant figure'])
-        params = {'domain': domain, 'num_sf': num_sf, 'min_exp': min_exp,
-                  'extra_sf_lim': extra_sf_lim}
-        return params
     
     def set_params(self, params):
         """Set the rich value parameters of each column of the dataframe."""
@@ -1818,7 +1819,6 @@ class RichDataFrame(pd.DataFrame):
     normalized_uncertainties = norm_uncs
     propagation_scores = prop_scores
     # Method acronyms.
-    get_parameters = get_params
     set_parameters = set_params
     set_limits_factors = set_lims_uncs
 
@@ -1828,79 +1828,83 @@ class RichSeries(pd.Series):
     @property
     def _constructor(self):
         return RichSeries
-    
     @property
     def _constructor_expanddim(self):
         return RichDataFrame
+    @property
+    def values(self):
+        return pd.Series(self).values.view(RichArray)
     
     @property
     def mains(self):
-        return pd.Series(rich_array(self.values).mains, self.index)
+        return pd.Series(self.values.view(RichArray).mains, self.index)
     @property
     def uncs(self):
-        return [pd.Series(rich_array(self.values).uncs.T[i].T,
+        return [pd.Series(self.values.view(RichArray).uncs.T[i].T,
                           self.index) for i in (0,1)]
     @property
     def are_lolims(self):
-        return pd.Series(rich_array(self.values).are_lolims, self.index)
+        return pd.Series(self.values.view(RichArray).are_lolims, self.index)
     @property
     def are_uplims(self):
-        return pd.Series(rich_array(self.values).are_uplims, self.index)
+        return pd.Series(self.values.view(RichArray).are_uplims, self.index)
     @property
     def are_ranges(self):
-        return pd.Series(rich_array(self.values).are_ranges, self.index)
+        return pd.Series(self.values.view(RichArray).are_ranges, self.index)
     @property
     def domains(self):
-        return [pd.Series(rich_array(self.values).domains.T[i].T,
+        return [pd.Series(self.values.view(RichArray).domains.T[i].T,
                           self.index) for i in (0,1)]
     @property
     def nums_sf(self):
-        return pd.Series(rich_array(self.values).num_sf, self.index)
+        return pd.Series(self.values.view(RichArray).num_sf, self.index)
     @property
     def min_exps(self):
-        return pd.Series(rich_array(self.values).min_exps, self.index)
+        return pd.Series(self.values.view(RichArray).min_exps, self.index)
+    def extra_sf_lims(self):
+        return pd.Series(self.values.view(RichArray).extra_sf_lim, self.index)
     @property
     def are_lims(self):
-        return pd.Series(rich_array(self.values).are_lims, self.index)
+        return pd.Series(self.values.view(RichArray).are_lims, self.index)
     @property
     def are_intervs(self):
-        return pd.Series(rich_array(self.values).are_intervs, self.index)
+        return pd.Series(self.values.view(RichArray).are_intervs, self.index)
     @property
     def are_centrs(self):
-        return pd.Series(rich_array(self.values).are_centrs, self.index)
+        return pd.Series(self.values.view(RichArray).are_centrs, self.index)
     @property
     def centers(self):
-        return pd.Series(rich_array(self.values).centers, self.index)
+        return pd.Series(self.values.view(RichArray).centers, self.index)
     @property
     def rel_uncs(self):
-        return [pd.Series(rich_array(self.values).rel_uncs.T[i].T,
+        return [pd.Series(self.values.view(RichArray).rel_uncs.T[i].T,
                           self.index) for i in (0,1)]
     @property
     def signals_noises(self):
-        return [pd.Series(rich_array(self.values).signals_noises.T[i].T,
+        return [pd.Series(self.values.view(RichArray).signals_noises.T[i].T,
                           self.index) for i in (0,1)]
     @property
     def ampls(self):
-        return [pd.Series(rich_array(self.values).ampls.T[i].T,
+        return [pd.Series(self.values.view(RichArray).ampls.T[i].T,
                           self.index) for i in (0,1)]
     @property
     def rel_ampls(self):
-        return [pd.Series(rich_array(self.values).rel_ampls.T[i].T,
+        return [pd.Series(self.values.view(RichArray).rel_ampls.T[i].T,
                           self.index) for i in (0,1)]
     @property
     def norm_uncs(self):
-        return [pd.Series(rich_array(self.values).norm_uncs.T[i].T,
+        return [pd.Series(self.values.view(RichArray).norm_uncs.T[i].T,
                           self.index) for i in (0,1)]
     @property
     def prop_scores(self):
-        return pd.Series(rich_array(self.values).prop_scores, self.index)
+        return pd.Series(self.values.view(RichArray).prop_scores, self.index)
     
     def intervals(self, sigmas=defaultparams['sigmas for intervals']):
-        return [pd.Series(rich_array(self.values).intervals(sigmas).T[i].T,
+        return [pd.Series(self.values.view(RichArray).intervals(sigmas).T[i].T,
                           self.index) for i in (0,1)]
             
     def signs(self, sigmas=defaultparams['sigmas for intervals']):
-        return pd.Series(rich_array(self.values).signs(sigmas), self.index)
+        return pd.Series(self.values.view(RichArray).signs(sigmas), self.index)
     
     def set_params(self, params):
         data = self.values.view(RichArray)
@@ -1913,7 +1917,7 @@ class RichSeries(pd.Series):
         self.update(pd.Series(data, self.index))
 
     def latex(self, **kwargs):
-        return pd.Series(rich_array(self.values).latex(**kwargs), self.index)
+        return pd.Series(self.values.view(RichArray).latex(**kwargs), self.index)
     
     def function(self, function, **kwargs):
         data = self.values.view(RichArray).function(function, **kwargs)
@@ -2155,11 +2159,11 @@ def rich_value(text, domain=None, use_default_extra_sf_lim=False):
         String representing a rich value.
     domain : list (float), optional
         The domain of the rich value, that is, the minimum and maximum
-        values that it can take. The default is the union of the domains of
-        all the elements of the resulting rich array.
+        values that it can take. By default, it is the domain written in the
+        input text, but if it is not written it will be [-np.inf, np.inf].
     use_default_extra_sf_lim : bool, optional
         If True, the default limit for extra significant figure will be used
-        instead of infering it from the input text. This will reduce the
+        instead of inferring it from the input text. This will reduce the
         computation time a little bit.
 
     Returns
@@ -2186,7 +2190,7 @@ def rich_value(text, domain=None, use_default_extra_sf_lim=False):
         if not '--' in text:
             if text.startswith('+'):
                 text = text[1:]
-            if 'e' in text:
+            if ' e' in text:
                 min_exp = int(text.split('e')[1])
             else:
                 min_exp = np.inf
@@ -2197,7 +2201,7 @@ def rich_value(text, domain=None, use_default_extra_sf_lim=False):
             for symbol, i0 in zip(['<', '>', '+', '-'], [0, 0, 0, 1]):
                 if symbol in text[i0:]:
                     single_value = False
-            if text in ['nan', 'Nan', 'inf', 'None']:
+            if text in ['None', 'none', 'NaN', 'nan', 'inf', '-inf']:
                 single_value = False
             if single_value:
                 x, e = text.split(' ')
@@ -2236,14 +2240,17 @@ def rich_value(text, domain=None, use_default_extra_sf_lim=False):
                     else:
                         x = text.split(' ')[0]
                         dx1, dx2 = '0', '0'
-                if x not in ['nan', 'NaN', 'None']:
+                if x in ['None', 'none', 'NaN', 'nan']:
+                    x = 'nan'
+                    dx1, dx2 = '0', '0'
+                elif 'inf' in x:
+                    x = x.replace('e0', '')
+                    dx1, dx2 = '0', '0'
+                else:
                     e = text.split(' ')[1]
                     x = x + e
                     dx1 = dx1 + e
                     dx2 = dx2 + e
-                else:
-                    x = 'nan'
-                    dx1, dx2 = '0', '0'
             if not use_default_extra_sf_lim:
                 if (not (is_lolim or is_uplim)
                         and not (float(dx1) == float(dx2) == 0)):
@@ -2314,12 +2321,13 @@ def rich_array(array, domain=None, use_default_extra_sf_lim=False):
     array : array / list (str)
         Input array containing text strings representing rich values.
     domain : list (float), optional
-        The domain of al the entries of the rich array, that is, the minimum
-        and maximum values that it can take. If not given, the original domain
-        of each entry of the array will be preserved.
+        The domain of all the entries of the rich array. If not specified,
+        there are two possibilities: if the entry of the input array is already
+        a rich value, its original domain will be preserved; if not, the
+        default domain will be used, that is, [-np.inf, np.inf].
     use_default_extra_sf_lim : bool, optional
         If True, the default limit for extra significant figure will be used
-        instead of infering it from the input text. This will reduce the
+        instead of inferring it from the input text. This will reduce the
         computation time a little bit.
 
     Returns
@@ -2333,8 +2341,12 @@ def rich_array(array, domain=None, use_default_extra_sf_lim=False):
         [], [], [], [], [], []
     min_exps, extra_sf_lims = [], []
     for element in array.flat:
-        x = (element if type(element) is RichValue
-             else rich_value(element, domain, use_default_extra_sf_lim))
+        if type(element) is RichValue:
+            x = element
+            if domain is not None:
+                x.domain = domain
+        else:
+            x = rich_value(element, domain, use_default_extra_sf_lim)
         mains += [x.main]
         uncs += [x.unc]
         are_lolims += [x.is_lolim]
@@ -2375,7 +2387,7 @@ def rich_dataframe(df, domains=None, use_default_extra_sf_lim=False):
         Instead, a common domain can be directly specified for all the columns.
     use_default_extra_sf_lim : bool, optional
         If True, the default limit for extra significant figure will be used
-        instead of infering it from the input text. This will reduce the
+        instead of inferring it from the input text. This will reduce the
         computation time a little bit.
 
     Returns
@@ -3712,13 +3724,19 @@ def _log10(x):
 # Functions for masking arrays.
 def isnan(x):
     x = rich_array(x) if type(x) is not RichArray else x
-    return np.array([xi.is_nan for xi in x]).reshape(x.shape)
+    return np.array([xi.is_nan for xi in x.flat]).reshape(x.shape)
 def isinf(x):
     x = rich_array(x) if type(x) is not RichArray else x
-    return np.array([xi.is_inf for xi in x]).reshape(x.shape)
+    return np.array([xi.is_inf for xi in x.flat]).reshape(x.shape)
 def isfinite(x):
     x = rich_array(x) if type(x) is not RichArray else x
-    return np.array([xi.is_finite for xi in x]).reshape(x.shape)
+    return np.array([xi.is_finite for xi in x.flat]).reshape(x.shape)
+
+# Functions for concatenating arrays.
+def append(arr, values, **kwargs):
+    return np.append(arr, values, **kwargs).view(RichArray)
+def concatenate(arrs, **kwargs):
+    return np.concatenate(arrs, **kwargs).view(RichArray)
 
 # Mathematical functions.
 def sqrt(x):
