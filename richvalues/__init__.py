@@ -3077,6 +3077,7 @@ def function_with_rich_values(function, args,
         args = [args]
     args = [rich_value(arg) if type(arg) is not RichValue else arg
             for arg in args]
+    
     function_or = copy.copy(function)
     if type(function) is str:
         function = function.replace('{}', '({})')
@@ -3094,7 +3095,8 @@ def function_with_rich_values(function, args,
         if len(args) > 1 and len(common_vars) > 0:
             unc_function = None
             
-    len_samples = int(len(args)**0.5 * defaultparams['size of samples'])
+    if len_samples is None:
+        len_samples = int(len(args)**0.5 * defaultparams['size of samples'])
     num_sf = min([arg.num_sf for arg in args])
     min_exp = round(np.mean([arg.min_exp for arg in args]))
     extra_sf_lim = max([arg.extra_sf_lim for arg in args])
@@ -3147,7 +3149,6 @@ def function_with_rich_values(function, args,
     if unc_propagation:
         if output_size == 1:
             main = [main]
-        new_domain = domain
         if unc_function is not None:
             args_unc = [np.array(arg.unc) for arg in args]
             unc = unc_function(*args_main, *args_unc)
