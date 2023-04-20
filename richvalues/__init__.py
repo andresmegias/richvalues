@@ -574,7 +574,7 @@ class RichValue():
         is_uplim = self.is_uplim
         domain = self.domain
         is_range = self.is_range
-        min_exp = self.min_exp
+        min_exp = abs(self.min_exp)
         extra_sf_lim = self.extra_sf_lim
         x = copy.copy(main)
         dx = copy.copy(unc)
@@ -670,7 +670,7 @@ class RichValue():
         domain = self.domain
         is_lolim = self.is_lolim
         is_uplim = self.is_uplim
-        min_exp = self.min_exp
+        min_exp = abs(self.min_exp)
         is_range = self.is_range
         extra_sf_lim = self.extra_sf_lim
         use_exp = True
@@ -2384,7 +2384,7 @@ def rich_dataframe(df, domains=None, use_default_extra_sf_lim=False):
         Input dataframe which contains text strings formatted as rich values.
     domains : dict (list (float)), optional
         Dictionary containing the domain for each column of the dataframe.
-        Instead, a common domain can be directly specified for all the columns.
+        Instead, a common domain for all the columns can be directly specified.
         If not specified, there are two possibilities: if the entry of the
         input dataframe is already a rich value, its original domain will be
         preserved; if not, the default domain will be used, that is,
@@ -3093,7 +3093,8 @@ def function_with_rich_values(function, args,
             common_vars = common_vars & set(args[i+1].vars)
         if len(args) > 1 and len(common_vars) > 0:
             unc_function = None
-    
+            
+    len_samples = int(len(args)**0.5 * defaultparams['size of samples'])
     num_sf = min([arg.num_sf for arg in args])
     min_exp = round(np.mean([arg.min_exp for arg in args]))
     extra_sf_lim = max([arg.extra_sf_lim for arg in args])
@@ -3139,16 +3140,13 @@ def function_with_rich_values(function, args,
 
     if output_size > 1:
         is_vectorizable = False
-    if domain is not None and not hasattr(domain[0], '__iter__'):
-        domain = [domain]*output_size
+    if domain is None:
+        domain = [None] * output_size
+    elif domain is not None and not hasattr(domain[0], '__iter__'):
+        domain = [domain] * output_size
     if unc_propagation:
         if output_size == 1:
             main = [main]
-        for k in range(output_size):
-            if domain is not None and domain[k] is None:
-                domain[k] = [-np.inf, np.inf]
-        if domain is None:
-            domain = [[-np.inf, np.inf]]*output_size
         new_domain = domain
         if unc_function is not None:
             args_unc = [np.array(arg.unc) for arg in args]
@@ -3171,9 +3169,35 @@ def function_with_rich_values(function, args,
             unc = [[main[k] - np.min(new_comb[:][k]),
                     np.max(new_comb[:][k]) - main[k]]
                    for k in range(output_size)]
-    else:
-        if len_samples is None:
-            len_samples = int(len(args)**0.5 * defaultparams['size of samples'])
+    if any([element is None for element in np.array(domain).flat]):
+        domain_args_distr = \
+                 np.array([loguniform_distribution(*arg.domain, len_samples//3)
+                           for arg in args])
+        if is_vectorizable:
+            domain_distr = function(*domain_args_distr)
+        else:
+            domain_distr = np.array([function(*domain_args_distr[:,i])
+                                     for i in range(len_samples//3)])
+        if output_size == 1 and len(domain_distr.shape) == 1:
+            domain_distr = np.array([domain_distr]).transpose()
+    new_domain = []
+    for k in range(output_size):
+        if domain[k] is not None:
+            domain_k = domain[k]
+        else:
+            domain1 = np.min(domain_distr[:,k])
+            domain2 = np.max(domain_distr[:,k])
+            if not np.isfinite(domain1):
+                domain1 = -np.inf
+            if not np.isfinite(domain2):
+                domain2 = np.inf
+            domain1, domain2 = remove_zero_infs([domain1, domain2],
+                                                zero_log, inf_log)
+            domain_k = [float(round_sf(domain1, num_sf+3)),
+                        float(round_sf(domain2, num_sf+3))]
+            domain_k = add_zero_infs(domain_k, zero_log+6, inf_log-6)
+        new_domain += [domain_k]
+    if not unc_propagation:
         if optimize_len_samples:
             prop_score = min([arg.prop_score for arg in args])
             lim1, lim2 = 4., 20.
@@ -3188,46 +3212,20 @@ def function_with_rich_values(function, args,
                                   for i in range(len_samples)])
         if output_size == 1 and len(new_distr.shape) == 1:
             new_distr = np.array([new_distr]).transpose()
-        main, unc, new_domain = [], [], []
-        if domain is None:
-            domain_args_distr = np.array(
-                [loguniform_distribution(*arg.domain, len_samples//3)
-                 for arg in args])
-            if is_vectorizable:
-                domain_distr = function(*domain_args_distr)
-            else:
-                domain_distr = np.array([function(*domain_args_distr[:,i])
-                                         for i in range(len_samples//3)])
-            if output_size == 1 and len(domain_distr.shape) == 1:
-                domain_distr = np.array([domain_distr]).transpose()
+        main, unc = [], []
         for k in range(output_size):
-            if domain is not None:
-                domain_k = domain[k]
-            else:
-                domain1 = np.min(domain_distr[:,k])
-                domain2 = np.max(domain_distr[:,k])
-                if not np.isfinite(domain1):
-                    domain1 = -np.inf
-                if not np.isfinite(domain2):
-                    domain2 = np.inf
-                domain1, domain2 = remove_zero_infs([domain1, domain2],
-                                                    zero_log, inf_log)
-                domain_k = [float(round_sf(domain1, num_sf+3)),
-                            float(round_sf(domain2, num_sf+3))]
-                domain_k = add_zero_infs(domain_k, zero_log+6, inf_log-6)
             def function_k(*argsk):
                 y = function(*argsk)
                 if output_size > 1:
                     y = y[k]
                 return y
-            rval_k = evaluate_distr(new_distr[:,k], domain_k, function_k,
+            rval_k = evaluate_distr(new_distr[:,k], new_domain[k], function_k,
                         args, len_samples, is_vectorizable, consider_intervs,
                         lims_fraction, num_reps_lims, zero_log, inf_log)
             main_k = rval_k.main if not rval_k.is_interv else rval_k.interval()
             unc_k = rval_k.unc
             main += [main_k]
             unc += [unc_k]
-            new_domain += [domain_k]
         
     output = []
     for k in range(output_size):
