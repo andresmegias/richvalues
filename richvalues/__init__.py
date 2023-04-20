@@ -2385,6 +2385,10 @@ def rich_dataframe(df, domains=None, use_default_extra_sf_lim=False):
     domains : dict (list (float)), optional
         Dictionary containing the domain for each column of the dataframe.
         Instead, a common domain can be directly specified for all the columns.
+        If not specified, there are two possibilities: if the entry of the
+        input dataframe is already a rich value, its original domain will be
+        preserved; if not, the default domain will be used, that is,
+        [-np.inf, np.inf].
     use_default_extra_sf_lim : bool, optional
         If True, the default limit for extra significant figure will be used
         instead of inferring it from the input text. This will reduce the
@@ -2406,6 +2410,8 @@ def rich_dataframe(df, domains=None, use_default_extra_sf_lim=False):
             domain = domains[col] if col in domains else None
             if is_rich_value:
                 x = new_df.at[i,col]
+                if domain is not None:
+                    x.domain = domain
             else:
                 is_number = True
                 text = str(new_df.at[i,col])
