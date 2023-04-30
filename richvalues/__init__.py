@@ -37,7 +37,7 @@ IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 """
 
-__version__ = '3.1.1'
+__version__ = '3.1.2'
 __author__ = 'Andrés Megías Toledano'
 
 import copy
@@ -416,7 +416,7 @@ class RichValue():
         variable_count += 1
                 
         self.main = main
-        self.unc = unc
+        self._unc = unc
         self.is_lolim = is_lolim
         self.is_uplim = is_uplim
         self.is_range = is_range
@@ -429,7 +429,16 @@ class RichValue():
         
         global variable_dict
         variable_dict[expression] = self
-          
+ 
+    @property
+    def unc(self): return self._unc
+    @unc.setter
+    def unc(self, x):
+        if not hasattr(x, '__iter__'):
+            x = [x, x]
+        x = list(x)
+        self._unc = x
+         
     @property
     def is_lim(self):
         """Upper/lower limit"""
