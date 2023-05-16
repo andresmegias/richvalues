@@ -2199,7 +2199,10 @@ def rich_value(text, domain=None, use_default_extra_sf_lim=False):
         if not '--' in text:
             if text.startswith('+'):
                 text = text[1:]
-            if ' e' in text:
+            if 'e' in text:
+                text = text.replace('e+', 'e')
+                if not ' e' in text:
+                    text = text.replace('e', ' e')
                 min_exp = abs(int(text.split('e')[1]))
             else:
                 min_exp = np.inf
@@ -2383,7 +2386,7 @@ def rich_array(array, domain=None, use_default_extra_sf_lim=False):
     new_array.set_params({'min_exp': min_exp, 'extra_sf_lim': extra_sf_lim})
     return new_array
 
-def rich_dataframe(df, domains=None, use_default_extra_sf_lim=False):
+def rich_dataframe(df, domains=None, use_default_extra_sf_lim=False, **kwargs):
     """
     Convert the values of the input dataframe of text strings to rich values.
 
@@ -2402,13 +2405,15 @@ def rich_dataframe(df, domains=None, use_default_extra_sf_lim=False):
         If True, the default limit for extra significant figure will be used
         instead of inferring it from the input text. This will reduce the
         computation time a little bit.
+    **kwargs : keyword arguments, optional
+        Keyword arguments for the DataFrame class.
 
     Returns
     -------
     new_df : dataframe
         Resulting dataframe of rich values.
     """
-    df = pd.DataFrame(df)
+    df = pd.DataFrame(df, **kwargs)
     if type(domains) is not dict:
         domains = {col: domains for col in df}
     new_df = copy.copy(df)
@@ -2422,15 +2427,16 @@ def rich_dataframe(df, domains=None, use_default_extra_sf_lim=False):
                 if domain is not None:
                     x.domain = domain
             else:
-                is_number = True
+                is_number = False
                 text = str(new_df.at[i,col])
-                for char in text.replace(' e', ''):
-                    if char.isalpha():
-                        is_number = False
+                for char in text.replace('e', ''):
+                    if char.isnumeric():
+                        is_number = True
                         break
                 if is_number:
-                    x = rich_value(new_df.at[i,col], domain,
-                                   use_default_extra_sf_lim)
+                    if domain is None:
+                        domain = defaultparams['domain']
+                    x = rich_value(text, domain, use_default_extra_sf_lim)
             if is_rich_value or is_number:
                 new_df.at[i,col] = x
     new_df = RichDataFrame(new_df)
@@ -3610,7 +3616,6 @@ def curve_fit(x, y, function, guess, num_samples=3000,
                 dispersions += [(np.sum((ys[cond] - ys_cond)**2)
                                 / (num_disp_points - 1))**0.5]
             losses += [result.fun]
-            guess = params_i
         else:
             num_fails += 1
         if ((i+1) % (num_samples//4)) == 0:
@@ -3697,7 +3702,6 @@ def point_fit(y, function, guess, num_samples=3000,
                 dispersions += [(np.sum((ys[cond] - ys_cond)**2)
                                 / (num_disp_points - 1))**0.5]
             losses += [result.fun]
-            guess = params_i
         else:
             num_fails += 1
         if ((i+1) % (num_samples//4)) == 0:
