@@ -17,7 +17,7 @@ Now, we can use mathematical operators to perform calculations with these rich v
 ~~~
 rv.function('{}+{}', [x,y])
 ~~~
-You just have to write the expression that you want to apply, using empty curly brackets instead of the inputs, which have to be specified in the correct order. The function expression can include other functions, for example, if you imported the NumPy library as `np`, you could write: `rv.function('np.sin({}/{})', [x,y])`.
+You just have to write the expression that you want to apply, using empty curly brackets instead of the inputs, which have to be specified in the correct order along with the expression. The function expression can include other functions, for example, if you imported the NumPy library as `np`, you could write: `rv.function('np.sin({}/{})', [x,y])`.
 
 Now, let's see how to create rich arrays (based on NumPy arrays).
 ~~~
