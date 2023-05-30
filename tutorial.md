@@ -1,6 +1,6 @@
 ## Quick tutorial
 
-Here you can see how to use the library within a Python script or terminal. For more details, please check the [user guide](https://github.com/andresmegias/richvalues/blob/main/userguide.pdf).
+Here you can see how to use the library within a Python script or terminal in a quick way. For more details, please check the [user guide](https://github.com/andresmegias/richvalues/blob/main/userguide.pdf).
 
 First of all, we import the library.
 ~~~
