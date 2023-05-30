@@ -25,7 +25,7 @@ v = rv.rarray(['8 +/- 3', '< 21'])
 ~~~
 The domain can be specified with de `domain` argument. As with individual rich values, you can access to different properties; for example, `u.mains` would return the main values, `[8., 21.]`. You can use arithmetic operators as well to perform calculations; for example, `u*v` would yield `[9-4+5, < 150]`. Alternatively, you can use `array_function`.
 ~~~
-rv.array_function('{}*{}, [u,v], elementwise=True)
+rv.array_function('{}*{}', [u,v], elementwise=True)
 ~~~
 Lastly, let's see how to create a rich dataframe (based on Pandas dataframes). The easiest way is to convert a dataframe with text strings representing rich values using `rich_dataframe`, but you can also convert dictionaries.
 ~~~
