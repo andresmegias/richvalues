@@ -15,7 +15,7 @@ If you want to specify a domain, you can write it between brackets, for example:
 
 Now, we can use mathematical operators to perform calculations with these rich values. For example, `x + y` would yield `8.3 +/- 0.6`. Alternatively, you can use `function`, that allows to apply more complicated functions.
 ~~~
-rv.function('{}+{}', args=[x,y])
+rv.function('{}+{}', [x,y])
 ~~~
 You just have to write the expression that you want to apply, using empty curly brackets instead of the inputs, which have to be specified in the correct order. The function expression can include other functions, for example, if you imported the NumPy library as `np`, you could write: `rv.function('np.sin({}/{})', [x,y])`.
 
