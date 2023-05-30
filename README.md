@@ -22,5 +22,5 @@ conda install richvalues -c richvalues
 - Library project on PyPI: https://pypi.org/project/richvalues/.
 - Library project on Anaconda website: https://anaconda.org/richvalues/richvalues/.
 
-## Quick tutorial
+## Tutorial
 You can check this [quick tutorial](https://github.com/andresmegias/richvalues/blob/main/tutorial.md) to learn the basics of this library.
