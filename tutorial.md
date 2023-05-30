@@ -39,4 +39,4 @@ rdf['d'] = rdf.create_column('np.tan({}/{})', ['a','b'])
 ~~~
 Note that in this case you have to specify the names of the columns involved in the calculation.
 
-That would be it for this quick tutorial. If you want to learn more, you can read the [user guide](https://github.com/andresmegias/richvalues/blob/main/userguide.pdf) and also check and run the [example scripts](https://github.com/andresmegias/richvalues/tree/main/examples) (`ratio.py` and `linearfit.py`).
+That would be it for this quick tutorial. If you want to learn more, you can read the [user guide](https://github.com/andresmegias/richvalues/blob/main/userguide.pdf) and also check and run the [example scripts](https://github.com/andresmegias/richvalues/tree/main/examples), `ratio.py` and `linearfit.py`.
