@@ -37,7 +37,7 @@ IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 """
 
-__version__ = '3.1.2'
+__version__ = '3.1.3'
 __author__ = 'Andrés Megías Toledano'
 
 import copy
@@ -364,6 +364,8 @@ class RichValue():
             unc = [unc, unc]
         if any(np.isinf(unc)):
             main = np.nan
+        if any(np.isnan(unc)):
+            unc = [0]*2
         if is_lolim or is_uplim or not np.isfinite(main):
             unc = [np.nan]*2
         
@@ -523,17 +525,17 @@ class RichValue():
     @property
     def is_nan(self):
         """Not a number value."""
-        isnan = np.isnan(np.diff(self.interval(sigmas=np.inf)))
+        isnan = np.isnan(np.diff(self.interval(sigmas=3.)))[0]
         return isnan
     @property
     def is_inf(self):
         """Infinite value."""
-        isinf = np.isinf(np.diff(self.interval(sigmas=np.inf)))
+        isinf = np.isinf(np.diff(self.interval(sigmas=3.)))[0]
         return isinf
     @property
     def is_finite(self):
         """Finite value."""
-        isfinite = np.isfinite(np.diff(self.interval(sigmas=np.inf)))
+        isfinite = np.isfinite(np.diff(self.interval(sigmas=3.)))[0]
         return isfinite
     
     def interval(self, sigmas=defaultparams['sigmas for intervals']):
@@ -864,13 +866,10 @@ class RichValue():
             if type(other_) is RichValue:
                 new_rval = add_two_rich_values(self, other_)
             else:
-                if other_ != 0:
-                    x = self.main + other_
-                    dx = np.abs(self.unc)
-                    new_rval = RichValue(x, dx, self.is_lolim, self.is_uplim,
-                                         self.is_range, self.domain)
-                else:
-                    new_rval = RichValue(0, domain=self.domain)
+                x = self.main + other_
+                dx = np.abs(self.unc)
+                new_rval = RichValue(x, dx, self.is_lolim, self.is_uplim,
+                                     self.is_range, self.domain)
                 new_rval.num_sf = self.num_sf
                 new_rval.min_exp = self.min_exp
                 new_rval.extra_sf_lim = self.extra_sf_lim
@@ -910,28 +909,19 @@ class RichValue():
             if type(other_) is RichValue:
                 new_rval = multiply_two_rich_values(self, other_)
             else:
-                if other_ != 0:
-                    x = self.main * other_
-                    dx = np.abs(np.array(self.unc) * other_)
-                    if type(other_) is not RichValue:
-                        other_domain = (other.domain if type(other)
-                                        is RichValue else None)
-                        other_ = RichValue(other_, domain=other_domain)
-                    domain_combs = [self.domain[i1] * other_.domain[i2]
-                                    for i1,i2 in zip([0,0,1,1],[0,1,0,1])]
-                    domain1, domain2 = min(domain_combs), max(domain_combs)
-                    if not np.isfinite(domain1):
-                        domain1 = -np.inf
-                    if not np.isfinite(domain2):
-                        domain2 = np.inf
-                    domain = [domain1, domain2]
-                    new_rval = RichValue(x, dx, self.is_lolim, self.is_uplim,
-                                         self.is_range, domain)
-                    new_rval.num_sf = self.num_sf
-                    new_rval.min_exp = self.min_exp
-                    new_rval.extra_sf_lim = self.extra_sf_lim
-                else:
-                    new_rval = RichValue(0, domain=self.domain)
+                x = self.main * other_
+                dx = np.abs(np.array(self.unc) * other_)
+                domain_combs = np.array(self.domain)
+                if not np.isnan(other_) and other_ != 0:
+                    domain_combs *= np.sign(other_)
+                if abs(other_) > 1.:
+                    domain_combs *= abs(other_)
+                domain = [min(x, min(domain_combs)), max(x, max(domain_combs))]
+                new_rval = RichValue(x, dx, self.is_lolim, self.is_uplim,
+                                     self.is_range, domain)
+                new_rval.num_sf = self.num_sf
+                new_rval.min_exp = self.min_exp
+                new_rval.extra_sf_lim = self.extra_sf_lim
         else:
             vars_str = ','.join(variables)
             function = eval('lambda {}: {}'.format(vars_str, expression))
@@ -964,26 +954,24 @@ class RichValue():
                     with np.errstate(divide='ignore', invalid='ignore'):
                         x = self.main / other_
                         dx = np.abs(np.array(self.unc) / other_)
-                        if type(other_) is not RichValue:
-                            other_domain = (other.domain if type(other)
-                                            is RichValue else None)
-                            other_ = RichValue(other_, domain=other_domain)
-                        domain_combs = [self.domain[i1] * other_.domain[i2]
-                                        for i1,i2 in zip([0,0,1,1],[0,1,0,1])]
-                        domain1, domain2 = min(domain_combs), max(domain_combs)
-                        if not np.isfinite(domain1):
-                            domain1 = -np.inf
-                        if not np.isfinite(domain2):
-                            domain2 = np.inf
-                        domain = [domain1, domain2]
+                    domain_combs = np.array(self.domain)
+                    if not np.isnan(other_) and other_ != 0:
+                        domain_combs *= np.sign(other_)
+                    if abs(other_) < 1:
+                        domain_combs /= abs(other_)
+                    domain = [min(x, min(domain_combs)),
+                              max(x, max(domain_combs))]
                     new_rval = RichValue(x, dx, self.is_lolim, self.is_uplim,
                                          self.is_range, domain)
                 else:
-                    if type(other_) is not RichValue:
+                    if type(other) is not RichValue:
                         other_domain = (other.domain if type(other)
                                         is RichValue else None)
                         other_ = RichValue(other_, domain=other_domain)
+                    else:
+                        other_ = other
                     zero = other_
+                    print('ei')
                     zero_signs = np.sign(zero.domain)
                     if all(zero_signs == 0):
                         zero_sign = np.nan
@@ -1013,52 +1001,8 @@ class RichValue():
         return new_rval
 
     def __rtruediv__(self, other):
-        if type(other) is RichValue:
-            other_vars = other.vars
-            other_expression = other.expression
-        else:
-            other_vars = []
-            other_expression = str(other)
-        expression = '({})/({})'.format(other_expression, self.expression)
-        variables = set(self.vars + other_vars)
-        common_vars = set(self.vars) & set(other_vars)
-        if len(common_vars) == 0:
-            other_ = (other.main if type(other) is RichValue
-                      and other.unc==[0,0] else other)
-            if type(other_) is RichValue:
-                new_rval = divide_two_rich_values(other_, self)
-            else:
-                if other_ != 0:
-                    with np.errstate(divide='ignore'):
-                        x = other_ / self.main
-                        dx = np.abs(x * np.array(self.unc) / self.main)
-                        if type(other_) is not RichValue:
-                            other_domain = (other.domain if type(other)
-                                            is RichValue else None)
-                            other_ = RichValue(other_, domain=other_domain)
-                        domain_combs = [self.domain[i1] * other_.domain[i2]
-                                        for i1,i2 in zip([0,0,1,1],[0,1,0,1])]
-                        domain1, domain2 = min(domain_combs), max(domain_combs)
-                        if not np.isfinite(domain1):
-                            domain1 = -np.inf
-                        if not np.isfinite(domain2):
-                            domain2 = np.inf
-                        domain = [domain1, domain2]
-                    new_rval = RichValue(x, dx, self.is_lolim, self.is_uplim,
-                                         self.is_range, domain)
-                else:
-                    new_rval = RichValue(0, domain=self.domain)
-                new_rval.num_sf = self.num_sf
-                new_rval.min_exp = self.min_exp
-                new_rval.extra_sf_lim = self.extra_sf_lim
-        else:
-            vars_str = ','.join(variables)
-            function = eval('lambda {}: {}'.format(vars_str, expression))
-            args = [variable_dict[var] for var in variables]
-            new_rval = function_with_rich_values(function, args)
-        new_rval.vars = list(variables)
-        new_rval.expression = expression
-        return new_rval
+        other_ = RichValue(other) if type(other) is not RichValue else other
+        return other_ / self
     
     def __pow__(self, other):
         if type(other) is RichValue:
@@ -1191,6 +1135,8 @@ class RichValue():
                             or self.is_lolim and np.isfinite(domain[1]))
         if list(unc) == [0, 0] and not self.is_interv:
             x = main * np.ones(N)
+        elif self.is_nan:
+            x = np.nan * np.ones(N)
         else:
             if not is_finite_interv and list(self.unc) != [np.inf, np.inf]:
                 if not self.is_lim:
@@ -2018,8 +1964,8 @@ def divide_two_rich_values(x, y):
         domain2 = np.inf
     domain = [domain1, domain2]
     sigmas = defaultparams['sigmas to use approximate uncertainty propagation']
-    if (not (x.is_interv or y.is_interv) and 0 not in [x.main, y.main]
-         and x.prop_score > sigmas and y.prop_score > sigmas):
+    if (not (x.is_interv or y.is_interv)
+            and x.prop_score > sigmas and y.prop_score > sigmas):
         z = x.main / y.main
         dx, dy = np.array(x.unc), np.array(y.unc)
         dz = abs(z) * ((dx/x.main)**2 + (dy/y.main)**2)**0.5
@@ -3253,9 +3199,9 @@ def function_with_rich_values(function, args,
             new_rval.vars = variables
             new_rval.expression = expression
         output += [new_rval]
-    if output_size == 1 and output_type not in (tuple, list):
+    if output_size == 1 and output_type is not list:
         output = output[0]
-    if output_type is tuple:
+    if output_type is tuple and output_size > 1:
         output = tuple(output)
     elif output_type is RichArray:
         output = np.array(output).view(RichArray)
@@ -3428,8 +3374,11 @@ def errorbar(x, y, lims_factor=None, **kwargs):
     def lim_factor(x):
         xc = np.sort(x.mains)
         xc = xc[np.isfinite(xc)]
-        with np.errstate(divide='ignore', invalid='ignore'):
-            r = abs(linregress(xc, np.arange(len(xc))).rvalue)
+        if len(xc) > 0:
+            with np.errstate(divide='ignore', invalid='ignore'):
+                r = abs(linregress(xc, np.arange(len(xc))).rvalue)
+        else:
+            r = 0
         factor = 2. + 12.*r**8
         return factor
     xa, ya = rich_array(x), rich_array(y)
