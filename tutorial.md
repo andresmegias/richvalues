@@ -33,7 +33,7 @@ Lastly, let's see how to create a rich dataframe (based on Pandas dataframes). T
 dic = {'a': ['2.1+/-0.3','5'], 'b': ['3.4+/-0.4','<6'], 'c': ['<4','8+/-1']}
 rdf = rv.rich_dataframe(dic, domains=[0,np.inf])
 ~~~
-You can access to different properties of the values of the rich dataframe; for example, `rdf.mains` would return a regular dataframe containing the main values of the elements of `rdf`. Arithmetic operators can be used with rich dataframes, although for more complicated functions you can use `create_column` and `create_row`.
+(For this particular example you would have to import the library NumPy with `import numpy as np`.) You can access to different properties of the values of the rich dataframe; for example, `rdf.mains` would return a regular dataframe containing the main values of the elements of `rdf`. Arithmetic operators can be used with rich dataframes, although for more complicated functions you can use `create_column` and `create_row`.
 ~~~
 rdf['d'] = rdf.create_column('np.tan({}/{})', ['a','b'])
 ~~~
