@@ -37,7 +37,7 @@ IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 """
 
-__version__ = '3.1.3'
+__version__ = '3.1.4'
 __author__ = 'Andrés Megías Toledano'
 
 import copy
@@ -845,6 +845,7 @@ class RichValue():
         new_rval.num_sf = self.num_sf
         new_rval.min_exp = self.min_exp
         new_rval.extra_sf_lim = self.extra_sf_lim
+        new_rval.vars = self.vars
         new_rval.expression = 'abs({})'.format(self.expression)
         return new_rval
     
@@ -868,8 +869,12 @@ class RichValue():
             else:
                 x = self.main + other_
                 dx = np.abs(self.unc)
+                other_domain = (other.domain if type(other) is RichValue
+                                else [-np.inf, np.inf])
+                domain = [self.domain[0] + other_domain[0],
+                          self.domain[1] + other_domain[1]]
                 new_rval = RichValue(x, dx, self.is_lolim, self.is_uplim,
-                                     self.is_range, self.domain)
+                                     self.is_range, domain)
                 new_rval.num_sf = self.num_sf
                 new_rval.min_exp = self.min_exp
                 new_rval.extra_sf_lim = self.extra_sf_lim
@@ -916,7 +921,8 @@ class RichValue():
                     domain_combs *= np.sign(other_)
                 if abs(other_) > 1.:
                     domain_combs *= abs(other_)
-                domain = [min(x, min(domain_combs)), max(x, max(domain_combs))]
+                domain = [min(np.nan_to_num(x, nan=-np.inf), min(domain_combs)),
+                          max(np.nan_to_num(x, nan=np.inf), max(domain_combs))]
                 new_rval = RichValue(x, dx, self.is_lolim, self.is_uplim,
                                      self.is_range, domain)
                 new_rval.num_sf = self.num_sf
@@ -959,8 +965,10 @@ class RichValue():
                         domain_combs *= np.sign(other_)
                     if abs(other_) < 1:
                         domain_combs /= abs(other_)
-                    domain = [min(x, min(domain_combs)),
-                              max(x, max(domain_combs))]
+                    domain = [min(np.nan_to_num(x, nan=-np.inf),
+                                  min(domain_combs)),
+                              max(np.nan_to_num(x, nan=np.inf),
+                                  max(domain_combs))]
                     new_rval = RichValue(x, dx, self.is_lolim, self.is_uplim,
                                          self.is_range, domain)
                 else:
@@ -971,7 +979,6 @@ class RichValue():
                     else:
                         other_ = other
                     zero = other_
-                    print('ei')
                     zero_signs = np.sign(zero.domain)
                     if all(zero_signs == 0):
                         zero_sign = np.nan
@@ -2883,9 +2890,17 @@ def evaluate_distr(distr, domain=[-np.inf,np.inf], function=None, args=None,
                 for arg in args]
     
     distr = np.array(distr)
+    size_or = distr.size
     distr = distr[np.isfinite(distr)].flatten()
-    if distr.size == 0:
+    size = distr.size
+    finite_fraction = size / size_or
+    if size == 0:
         return RichValue(np.nan)
+    elif finite_fraction < 0.7:
+        decimals = (0 if finite_fraction >= 0.01
+                    else int(abs(np.floor(np.log10(100*finite_fraction)))))
+        print('Warning: Valid values are only {:.{}f} % of the distribution.'
+              .format(100*finite_fraction, decimals))
     domain1, domain2 = domain if domain is not None else [-np.inf, np.inf]
     main, unc = center_and_uncs(distr)
     
@@ -3045,7 +3060,7 @@ def function_with_rich_values(function, args,
         variables = np.concatenate(tuple(arg.vars for arg in args)).tolist()
         expressions = [arg.expression for arg in args]
         expression = function.format(*expressions).replace(' ', '')
-        expression = expression.replace('((', '(').replace('))', ')')
+        # expression = expression.replace('((', '(').replace('))', ')')
         variables = list(set(variables))
         vars_str = ','.join(variables)
         function = eval('lambda {}: {}'.format(vars_str, expression))
@@ -3237,7 +3252,7 @@ def function_with_rich_arrays(function, args, elementwise=False, **kwargs):
     """
     if type(args) not in (tuple, list):
         args = [args]
-    args = [rich_value(arg) if type(arg) != RichArray else arg
+    args = [rich_array(arg) if type(arg) != RichArray else arg
             for arg in args]
     if elementwise and (len(args) > 0
             and type(args[0]) is str or not hasattr(args[0], '__iter__')):
