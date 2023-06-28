@@ -1,5 +1,5 @@
 {% set name = "richvalues" %}
-{% set version = "3.1.4" %}
+{% set version = "3.1.5" %}
 
 package:
   name: "{{ name|lower }}"
@@ -7,7 +7,7 @@ package:
 
 source:
   url: "https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/{{ name }}-{{ version }}.tar.gz"
-  sha256: 7e6fa27297dd87f6ff68424a8bf39ae7d472a0fe123eb553ed7c1a9ab154405d
+  sha256: 8c2c4fb67f024ac90354dd0dbcec96e356aed352be59ea53248b08b82e0b82ed
 
 build:
   number: 0
@@ -34,7 +34,7 @@ about:
   license_file: LICENSE
   summary: "Python library for working with uncertainties and upper/lower limits"
   doc_url: "https://github.com/andresmegias/richvalues/blob/main/userguide.pdf"
-  description: "RichValues is a Python 3 library for working with numeric values with uncertainties, upper/lower limits and finite intervals, which may be called _rich values_. With it, one can import rich values written in plain text documents in an easily readable format, operate with them propagating the uncertainties automatically, and export them in the same formatting style as the import. It also allows to easily plot rich values and to make fits to any function, taking into account the uncertainties and the upper/limits or finite intervals. Moreover, correlations between variables are taken into account when performing calculations with rich values. An user guide and a quick tutorial are available in the GitHub repository: [https://github.com/andresmegias/richvalues/](https://github.com/andresmegias/richvalues/)."
+  description: "RichValues is a Python 3 library for working with numeric values with uncertainties, upper/lower limits and finite intervals, which may be called _rich values_. With it, one can import rich values written in plain text documents in an easily readable format, operate with them propagating the uncertainties automatically, and export them in the same formatting style as the import. It also allows to easily plot rich values and to make fits to any function, taking into account the uncertainties and the upper/limits or finite intervals. Moreover, correlations between variables are taken into account when performing calculations with rich values. A user guide and a quick tutorial are available in the GitHub repository: [https://github.com/andresmegias/richvalues/](https://github.com/andresmegias/richvalues/)."
 
 extra:
   recipe-maintainers:
