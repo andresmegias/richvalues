@@ -6,7 +6,7 @@ With it, one can import rich values written in plain text documents in an easily
 
 The libraries NumPy, Pandas, SciPy and Matplotlib are required.
 
-You can read the user guide ([`userguide.pdf`](https://github.com/andresmegias/richvalues/blob/main/userguide.pdf)) to learn how to use it. You can also test the library in the example scripts inside the `examples` folder.
+You can read the user guide ([`userguide.pdf`](https://github.com/andresmegias/richvalues/blob/main/userguide.pdf)) to learn how to use this library. You can also test it in the example scripts inside the `examples` folder.
 
 ## Installation
 
