@@ -65,7 +65,7 @@ y = rv.rich_array(data['y'].values)
 
 t1 = time.time()
 result = rv.curve_fit(x, y, lambda x,m,b: m*x+b, guess=[2.,10.],
-                      consider_intervs=True)
+                      consider_arg_intervs=True)
 t2 = time.time()
 slope, offset = result['parameters']
 dispersion = result['dispersion']
