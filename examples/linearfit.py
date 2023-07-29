@@ -173,3 +173,5 @@ if plot_fit:
     
     plt.tight_layout()
     plt.subplots_adjust(wspace=0.3)
+
+plt.show()
