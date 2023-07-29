@@ -10,7 +10,7 @@ You can read the user guide ([`userguide.pdf`](https://github.com/andresmegias/r
 
 ## Installation
 
-To install the library, you can use the Python Package Installer to download it from the Python Package Index (PyPI). To do so, run from the terminal the following command:
+To install RichValues, you can use the Python Package Installer to download it from the Python Package Index (PyPI). To do so, run from the terminal the following command:
 ~~~
 pip3 install richvalues
 ~~~
@@ -23,5 +23,5 @@ conda install richvalues -c richvalues
 You can check this [quick tutorial](https://github.com/andresmegias/richvalues/blob/main/tutorial.md) to learn the basics of this library.
 
 ## Links
-- Library project on PyPI: https://pypi.org/project/richvalues/.
-- Library project on Anaconda website: https://anaconda.org/richvalues/richvalues/.
+- Project page on PyPI: https://pypi.org/project/richvalues/.
+- Project page on Anaconda website: https://anaconda.org/richvalues/richvalues/.
