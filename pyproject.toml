@@ -8,7 +8,7 @@ version = "4.0.0"
 description = "Python library for working with uncertainties and upper/lower limits"
 license = {file="LICENSE"}
 authors = [{name="Andrés Megías Toledano"}]
-readme = "README.md"
+readme = "description.md"
 dependencies = ["numpy", "pandas", "scipy", "matplotlib"]
 classifiers = ["Programming Language :: Python :: 3",
                "License :: OSI Approved :: BSD License",
