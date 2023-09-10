@@ -1,6 +1,6 @@
 import setuptools
 
-with open('README.md', 'r') as file:
+with open('description.md', 'r') as file:
     long_description = file.read()
 
 setuptools.setup(
