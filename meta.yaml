@@ -34,7 +34,7 @@ about:
   license_file: LICENSE
   summary: "Python library for working with uncertainties and upper/lower limits"
   doc_url: "https://github.com/andresmegias/richvalues/blob/main/userguide.pdf"
-  description: "RichValues is a Python 3 library for working with numeric values with uncertainties, upper/lower limits and finite intervals, which may be called _rich values_. With it, one can import rich values written in plain text documents in an easily readable format, operate with them propagating the uncertainties automatically, and export them in the same formatting style as the import. It allows to easily plot rich values and to make fits to any function, taking into account the uncertainties and the upper/limits or finite intervals. Correlations between variables are taken into account when performing calculations with rich values. Rich values of integer nature and rich values containing complex numbers are also supported. Lastly, rich values can be defined using a probability density function (PDF) instead of giving a main value with uncertainties or an upper/lower limit. A user guide and a quick tutorial are available in the GitHub repository: [https://github.com/andresmegias/richvalues/](https://github.com/andresmegias/richvalues/)."
+  description: "RichValues is a Python 3 library for working with numeric values with uncertainties, upper/lower limits and finite intervals, which may be called _rich values_. A user guide and a quick tutorial are available on GitHub: [https://github.com/andresmegias/richvalues/](https://github.com/andresmegias/richvalues/)."
 
 extra:
   recipe-maintainers:
