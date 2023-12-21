@@ -37,7 +37,7 @@ IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 """
 
-__version__ = '4.0.0'
+__version__ = '4.0.1'
 __author__ = 'Andrés Megías Toledano'
 
 import copy
@@ -1048,7 +1048,8 @@ class RichValue():
                 dx = self.unc
                 domain = [self.domain[0] + other, self.domain[1] + other]
                 is_int = self.is_int and (round(other) == other)
-                rvalue = RichValue(x, dx, domain=domain, is_int=is_int)
+                rvalue = RichValue(x, dx, self.is_lolim, self.is_uplim,
+                                   self.is_range, domain, is_int)
             else:
                 rvalue = add_rich_values(self, other)
         else:
@@ -1097,7 +1098,8 @@ class RichValue():
                 is_int = self.is_int and round(other) == other
                 domain = propagate_domain(self.domain, [other]*2,
                                           lambda a,b: a*b)
-                rvalue = RichValue(x, dx, domain=domain, is_int=is_int)
+                rvalue = RichValue(x, dx, self.is_lolim, self.is_uplim,
+                                   self.is_range, domain, is_int)
             else:
                 rvalue = multiply_rich_values(self, other)
         else:
@@ -1138,12 +1140,14 @@ class RichValue():
                 if other != 0:
                     x = self.main / other
                     dx = [self.unc[0] / other, self.unc[1] / other]
+                    is_int = self.is_int and round(other) == other
                 else:
                     x = np.nan
                     dx = np.nan
                 domain = propagate_domain(self.domain, [other]*2,
                                           lambda a,b: a/b)
-                rvalue = RichValue(x, dx, domain=domain)
+                rvalue = RichValue(x, dx, self.is_lolim, self.is_uplim,
+                                   self.is_range, domain, is_int)
             else:
                 rvalue = divide_rich_values(self, other)
         else:
@@ -1662,20 +1666,6 @@ class RichArray(np.ndarray):
     @property
     def uncs_eb(self):
         return self.uncs.transpose()
-    
-    @property
-    def datatype(self):
-        types = np.array([type(x) for x in self.flat]).reshape(self.shape)
-        if any(types == ComplexRichValue):
-            arr_type = complex
-        elif any(types == RichValue):
-            if not any(self.are_ints):
-                arr_type = float
-            else:
-                arr_type = int
-        else:
-            arr_type = types[0]
-        return arr_type
 
     @property
     def variables(self):
@@ -1696,6 +1686,21 @@ class RichArray(np.ndarray):
         if expr[0] == '(' and expr[-1] == ')':
             expr = expr[1:-1]
         return expr
+    
+    @property
+    def datatype(self):
+        """Type of numbers of the entries of the rich array."""
+        types = np.array([type(x) for x in self.flat]).reshape(self.shape)
+        if any(types == ComplexRichValue):
+            arr_type = complex
+        elif any(types == RichValue):
+            if not any(self.are_ints):
+                arr_type = float
+            else:
+                arr_type = int
+        else:
+            arr_type = types[0]
+        return arr_type
     
     def intervals(self, sigmas=None):
         sigmas = set_default_value(sigmas, 'sigmas for intervals')
@@ -2640,7 +2645,10 @@ def add_rich_values(x, y):
             and min(x.rel_ampl) > sigmas and min(y.rel_ampl) > sigmas)):
         z = x.main + y.main
         dz = (np.array(x.unc)**2 + np.array(y.unc)**2)**0.5
-        z = RichValue(z, dz, domain=domain, is_int=is_int)
+        is_lolim = x.is_lolim or y.is_lolim
+        is_uplim = x.is_uplim or y.is_uplim
+        is_range = x.is_range or y.is_range
+        z = RichValue(z, dz, is_lolim, is_uplim, is_range, domain, is_int)
     else:
         z = function_with_rich_values(lambda a,b: a+b, [x, y], domain=domain,
                                       is_vectorizable=True)
@@ -2662,7 +2670,10 @@ def multiply_rich_values(x, y):
         z = x.main * y.main
         dx, dy = np.array(x.unc), np.array(y.unc)
         dz = abs(z) * ((dx/x.main)**2 + (dy/y.main)**2)**0.5 if z != 0. else 0.
-        z = RichValue(z, dz, domain=domain, is_int=is_int)
+        is_lolim = x.is_lolim or y.is_lolim
+        is_uplim = x.is_uplim or y.is_uplim
+        is_range = x.is_range or y.is_range
+        z = RichValue(z, dz, is_lolim, is_uplim, is_range, domain, is_int)
     else:
         z = function_with_rich_values(lambda a,b: a*b, [x, y], domain=domain,
                                       is_vectorizable=True)
@@ -2676,6 +2687,7 @@ def divide_rich_values(x, y):
     num_sf = min(x.num_sf, y.num_sf)
     min_exp = round(np.mean([x.min_exp, y.min_exp]))
     extra_sf_lim = max(x.extra_sf_lim, y.extra_sf_lim)
+    is_int = x.is_int and y.is_int
     domain = propagate_domain(x.domain, y.domain, lambda a,b: a/b)
     sigmas = defaultparams['sigmas to use approximate uncertainty propagation']
     if (x.is_exact or y.is_exact or (not (x.is_interv or y.is_interv)
@@ -2685,7 +2697,13 @@ def divide_rich_values(x, y):
             dx, dy = np.array(x.unc), np.array(y.unc)
             dz = (abs(z) * ((dx/x.main)**2 + (dy/y.main)**2)**0.5 if z != 0.
                   else 0.)
-            z = RichValue(z, dz, domain=domain)
+            is_uplim = True if x.is_uplim or y.is_lolim else False
+            is_lolim = True if x.is_lolim or y.is_uplim else False
+            is_range = x.is_range or y.is_range
+            if not domain[0] <= z <= domain[1]:
+                domain = [min(x.domain[0], y.domain[0]),
+                          max(x.domain[1], y.domain[1])]
+            z = RichValue(z, dz, is_lolim, is_uplim, is_range, domain, is_int)
         else:
             zero = y
             zero_signs = np.sign(zero.domain)
@@ -4538,12 +4556,12 @@ def curve_fit(x, y, function, guess, num_samples=3000,
         and the prediction falls outside the interval of possible values of the
         rich value. The default is 4.
     consider_arg_intervs : bool, optional
-        If True, upper/lower limits and constant ranges of values will be taken
-        into account during the fit. This option increases considerably the
-        computation time. The default is False.
+        If True, upper/lower limits and constant ranges of values in the input
+        data will be taken into account during the fit. This option increases
+        considerably the computation time. The default is False.
     consider_param_intervs : bool, optional
         If True, upper/lower limits and constant ranges of values will be taken
-        into account for calculating the parameters. The default is True.
+        into account for calculating the fit parameters. The default is True.
     use_easy_sampling : bool, optional.
         If True, upper/lower limits and constant ranges of values will be
         sampled as usual, with uniform distributions for finite intervals of
