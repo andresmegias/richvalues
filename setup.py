@@ -1,11 +1,11 @@
 import setuptools
 
-with open('description.md', 'r') as file:
+with open('README.md', 'r') as file:
     long_description = file.read()
 
 setuptools.setup(
     name = 'richvalues',
-    version = '4.0.1',
+    version = '4.0.3',
     license = 'BSD-3-Clause',
     author = 'Andrés Megías Toledano',
     description = 'Python library for working with uncertainties and upper/lower limits',
