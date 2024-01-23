@@ -10,7 +10,7 @@ You can read the user guide ([`userguide.pdf`](https://github.com/andresmegias/r
 
 ## Installation
 
-To install RichValues, you can use the Package Installer for Python (PIP) to download it from the Python Package Index (PyPI). To do so, run from the terminal the following command:
+To install RichValues, you can use the Python package installer to download it from the Python Package Index (PyPI). To do so, run from the terminal the following command:
 ~~~
 pip3 install richvalues
 ~~~
