@@ -6,7 +6,7 @@ Rich Values Library
 -------------------
 Version 4.0
 
-Copyright (C) 2023 - Andrés Megías Toledano
+Copyright (C) 2024 - Andrés Megías Toledano
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are
@@ -91,12 +91,12 @@ def set_default_params(new_params_dict):
 def restore_default_params():
     """Restore original values of the default parameters"""
     for var in original_defaultparams:
-        defaultparams[var] = original_defaultparams[var]
+        defaultparams[var] = copy.copy(original_defaultparams[var])
 
 def set_default_value(var, param):
     """Set the current variable as the general parameter value"""
     if var is None:
-        var = defaultparams[param]
+        var = copy.copy(defaultparams[param])
     return var
 
 def round_sf(x, n=None, min_exp=None, extra_sf_lim=None):
@@ -173,7 +173,7 @@ def round_sf(x, n=None, min_exp=None, extra_sf_lim=None):
     y = y.replace('e+','e').replace('e00','e0')
     return y
 
-def round_sf_unc(x, dx,n=None, min_exp=None, extra_sf_lim=None):
+def round_sf_unc(x, dx, n=None, min_exp=None, extra_sf_lim=None):
     """
     Round a value and its uncertainty depending on their significant figures.
 
@@ -692,7 +692,7 @@ class RichValue():
         is_lolim = self.is_lolim
         is_uplim = self.is_uplim
         is_range = self.is_range
-        domain = self.domain
+        domain = copy.copy(self.domain)
         is_int = self.is_int
         min_exp = abs(self.min_exp)
         extra_sf_lim = self.extra_sf_lim
@@ -706,7 +706,7 @@ class RichValue():
         n = self.num_sf
         if self.is_exact and np.diff(domain) > 0.:
             with np.errstate(divide='ignore', invalid='ignore'):
-                ratios = np.array(self.domain) / self.main
+                ratios = np.array(domain) / main
                 if all(ratios < 7.):
                     n = max(n, 2)
         range_bound = (self.range_bound if hasattr(self, 'range_bound')
@@ -993,8 +993,8 @@ class RichValue():
     def __abs__(self):
         sigmas = defaultparams['sigmas to use approximate '
                                + 'uncertainty propagation']
-        domain = self.domain
-        is_int = self.is_int
+        domain = copy.copy(self.domain)
+        is_int = copy.copy(self.is_int)
         x1, x2 = self.interval(sigmas=np.inf)
         if all(np.array([x1, x2]) >= 0):
             if (self.is_centr and self.prop_score > sigmas) or self.is_interv:
@@ -1223,7 +1223,7 @@ class RichValue():
         if len(common_vars) == 0:
             sigmas = defaultparams['sigmas to use approximate '
                                    + 'uncertainty propagation']
-            domain = self.domain
+            domain = copy.copy(self.domain)
             if ((domain[0] >= 0 and (type(other) is RichValue
                                      or self.prop_score < sigmas))
                 or (domain[0] < 0 and type(other) is not RichValue)
@@ -1233,8 +1233,6 @@ class RichValue():
                 if self.main != 0:
                     if type(other) is not RichValue and other%2 == 0:
                         domain = [0, np.inf]
-                    else:
-                        domain = self.domain
                     rvalue = function_with_rich_values(lambda a,b: a**b,
                                                 [self, other_], domain=domain)
                 else:
@@ -1309,7 +1307,7 @@ class RichValue():
         if pdf_info == 'default':
             main = self.main
             unc = self.unc
-            domain = self.domain
+            domain = copy.copy(self.domain)
             x = np.array(x)
             y = np.zeros(len(x))
             if self.is_exact:    
@@ -1337,9 +1335,9 @@ class RichValue():
     
     def sample(self, len_sample=1):
         """Sample of the distribution corresponding to the rich value"""
-        pdf_info = self.pdf_info
-        domain = self.domain
+        domain = copy.copy(self.domain)
         is_int = self.is_int
+        pdf_info = self.pdf_info
         N = int(len_sample)
         if pdf_info == 'default':
             main = self.main
@@ -1963,10 +1961,10 @@ class RichDataFrame(pd.DataFrame):
         set_num_sf = 'num_sf' in params
         set_min_exp = 'min_exp' in params
         set_extra_sf_lim = 'extra_sf_lim' in params
-        num_rows = self.shape[0]
-        row_inds = range(num_rows)
+        row_inds = self.index
         for col in self:
-            is_rich_value = type(self[col][0]) in (RichValue, ComplexRichValue)
+            idx = self.index[0]
+            is_rich_value = type(self[col][idx]) in (RichValue, ComplexRichValue)
             if is_rich_value:
                 if set_domain and col in params['domain']:
                     for i in row_inds:
