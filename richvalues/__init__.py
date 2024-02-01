@@ -37,7 +37,7 @@ IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 """
 
-__version__ = '4.0.1'
+__version__ = '4.0.4'
 __author__ = 'Andrés Megías Toledano'
 
 import copy
@@ -59,9 +59,10 @@ defaultparams = {
     'minimum exponent for scientific notation': 4,
     'limit for extra significant figure': 2.5,
     'use extra significant figure for exact values': True,
+    'use extra significant figure for finite intervals': True, 
     'omit ones in scientific notation in LaTeX': False,
     'multiplication symbol for scientific notation in LaTeX': '\\cdot',
-    'sigmas to define upper/lower limits': 2.,
+    'sigmas to define upper/lower limits from read values': 2.,
     'sigmas to use approximate uncertainty propagation': 20.,
     'use 1-sigma combinations to approximate uncertainty propagation': False,
     'fraction of the central value for upper/lower limits': 0.2,
@@ -423,9 +424,18 @@ class RichValue():
             if main == domain:
                 main = np.nan
                 is_range = False
-            if is_range:
-                unc = [(main[1] - main[0]) / 2] * 2
-                main = (main[0] + main[1]) / 2
+        if type(main) is not list:
+            if is_uplim and np.isfinite(domain[0]) and domain[0] != 0:
+                main = [domain[0], main]
+                is_range = True
+                is_uplim = False
+            elif is_lolim and np.isfinite(domain[1]) and domain[1] != 0:
+                main = [main, domain[1]]
+                is_range = True
+                is_lolim = False
+        if is_range and type(main) is list:
+            unc = [(main[1] - main[0]) / 2] * 2
+            main = (main[0] + main[1]) / 2
             
         if not np.isnan(main) and not domain[0] <= main <= domain[1]:
             raise Exception('Invalid main value {} for domain {}.'
@@ -452,10 +462,11 @@ class RichValue():
         with np.errstate(divide='ignore', invalid='ignore'):
             ampl = [main - domain[0], domain[1] - main]
             rel_ampl = list(np.array(ampl) / np.array(unc))
-        if not (is_lolim or is_uplim):
+        if not (is_lolim or is_uplim or is_range):
             is_range_domain = False
             if min(rel_ampl) <= 1.:
-                sigmas = defaultparams['sigmas to define upper/lower limits']
+                sigmas = defaultparams['sigmas to define upper/lower limits'
+                                       ' from read values']
                 x1 = max(main - unc[0], domain[0])
                 x2 = min(main + unc[1], domain[1])
                 if x1 == domain[0] and x2 != domain[1]:
@@ -495,10 +506,14 @@ class RichValue():
                 unc = [(x2 - x1) / 2] * 2
         
         global variable_count
-        variable_count += 1
-        variable = 'x{}'.format(variable_count)
-        variables = [variable]
-        expression = variable if domain[0] != domain[1] else str(main)
+        if domain[0] != domain[1]:
+            variable_count += 1
+            variable = 'x{}'.format(variable_count)
+            variables = [variable]
+            expression = variable
+        else:
+            variables = []
+            expression = str(main)
                 
         self.main = main
         self._unc = unc
@@ -701,6 +716,8 @@ class RichValue():
                                       ' custom PDF']
         use_extra_sf_in_exacts = \
             defaultparams['use extra significant figure for exact values']
+        use_extra_sf_in_ranges = \
+            defaultparams['use extra significant figure for finite intervals']
         x = main
         dx = unc
         n = self.num_sf
@@ -721,7 +738,8 @@ class RichValue():
             dx1, dx2 = dx
             if not self.is_lim:
                 if dx1 == dx2 == 0:
-                    if not range_bound and use_extra_sf_in_exacts:
+                    if (not range_bound and use_extra_sf_in_exacts
+                        or range_bound and use_extra_sf_in_ranges):
                         n += 1
                 y, (dy1, dy2) = round_sf_uncs(x, [dx1, dx2], n,
                                               min_exp, extra_sf_lim)
@@ -838,7 +856,7 @@ class RichValue():
                  and any(abs(np.floor(_log10(abs(np.array(dx))))) < min_exp))
              or self.is_exact and abs(np.floor(_log10(abs(x)))) < min_exp
              or self.is_lim and abs(np.floor(_log10(abs(float(x))))) < min_exp
-             or np.isinf(min_exp)):
+             or np.isinf(min_exp) or main == 0 and unc[0] == 0 == unc[1]):
             use_exp = False
         text = ''
         non_numerics = ['nan', 'NaN', 'None', 'inf', '-inf']
@@ -899,8 +917,8 @@ class RichValue():
                             else:
                                 a = 0
                             a = str(int(a))
-                            text = ('$({} \pm {})'.format(y, dy)
-                                     + mult_symbol + '10^{'+a+'}$')
+                            text = ('$({} \pm {}) '.format(y, dy)
+                                     + mult_symbol + ' 10^{'+a+'}$')
                     else:
                         y, dy = round_sf_uncs(x, [dx[0], dx[1]], n,
                                               min_exp, extra_sf_lim)
@@ -1015,7 +1033,7 @@ class RichValue():
             else:
                 x2 = max(np.abs([x1, x2]))
                 x1 = 0
-                rvalue = RichValue([x1, x2], dx, domain=domain, is_int=is_int)
+                rvalue = RichValue([x1, x2], domain=domain, is_int=is_int)
         rvalue.domain[0] = max(0, rvalue.domain[0])
         rvalue.num_sf = self.num_sf
         rvalue.min_exp = self.min_exp
@@ -2041,7 +2059,7 @@ class RichDataFrame(pd.DataFrame):
         row_sep = ' ' + row_sep + ' \n'
         df = copy.copy(self)
         for col in self:
-            for i in range(len(self[col])):
+            for i in self.index:
                 entry = self.at[i,col]
                 if 'RichValue' in str(type(entry)):
                     if not np.isnan(entry.main):
@@ -2639,14 +2657,14 @@ def add_rich_values(x, y):
     is_int = x.is_int and y.is_int
     domain = [x.domain[0] + y.domain[0], x.domain[1] + y.domain[1]]
     sigmas = defaultparams['sigmas to use approximate uncertainty propagation']
-    if (x.is_exact or y.is_exact or (not (x.is_interv or y.is_interv)
-            and min(x.rel_ampl) > sigmas and min(y.rel_ampl) > sigmas)):
+    if x.is_exact or y.is_exact:
+        z = list(np.array(x.interval()) + np.array(y.interval()))
+        z = RichValue(z, domain=domain, is_int=is_int)
+    elif (not (x.is_interv or y.is_interv)
+            and min(x.rel_ampl) > sigmas and min(y.rel_ampl) > sigmas):
         z = x.main + y.main
         dz = (np.array(x.unc)**2 + np.array(y.unc)**2)**0.5
-        is_lolim = x.is_lolim or y.is_lolim
-        is_uplim = x.is_uplim or y.is_uplim
-        is_range = x.is_range or y.is_range
-        z = RichValue(z, dz, is_lolim, is_uplim, is_range, domain, is_int)
+        z = RichValue(z, dz, domain=domain, is_int=is_int)
     else:
         z = function_with_rich_values(lambda a,b: a+b, [x, y], domain=domain,
                                       is_vectorizable=True)
@@ -2663,15 +2681,15 @@ def multiply_rich_values(x, y):
     is_int = x.is_int and y.is_int
     domain = propagate_domain(x.domain, y.domain, lambda a,b: a*b)
     sigmas = defaultparams['sigmas to use approximate uncertainty propagation']
-    if (x.is_exact or y.is_exact or (not (x.is_interv or y.is_interv)
-         and x.prop_score > sigmas and y.prop_score > sigmas)):
+    if x.is_exact or y.is_exact:
+        z = list(np.array(x.interval()) * np.array(y.interval()))
+        z = RichValue(z, domain=domain, is_int=is_int)
+    elif (not (x.is_interv or y.is_interv)
+         and x.prop_score > sigmas and y.prop_score > sigmas):
         z = x.main * y.main
         dx, dy = np.array(x.unc), np.array(y.unc)
         dz = abs(z) * ((dx/x.main)**2 + (dy/y.main)**2)**0.5 if z != 0. else 0.
-        is_lolim = x.is_lolim or y.is_lolim
-        is_uplim = x.is_uplim or y.is_uplim
-        is_range = x.is_range or y.is_range
-        z = RichValue(z, dz, is_lolim, is_uplim, is_range, domain, is_int)
+        z = RichValue(z, dz, domain=domain, is_int=is_int)
     else:
         z = function_with_rich_values(lambda a,b: a*b, [x, y], domain=domain,
                                       is_vectorizable=True)
@@ -3817,19 +3835,18 @@ def evaluate_distr(distr, domain=None, function=None, args=None,
             x2 += 1
         ord_range_1s = magnitude_order_range([main-unc[0], main+unc[1]])
         ord_range_x = magnitude_order_range([x1, x2])
-        probs_hr, bins_hr = np.histogram(distr, bins=4*len_samples,
-                                         density=True)
+        probs_hr, bins_hr = np.histogram(distr, bins=60, density=True)
         probs_lr, bins_lr = np.histogram(distr, bins=20, density=True)
         probs_hr /= probs_hr.max()
         probs_lr /= probs_lr.max()
         # plt.plot(np.mean([bins_hr[:-1], bins_hr[1:]], axis=0), probs_hr,'.')
         # plt.plot(np.mean([bins_lr[:-1], bins_lr[1:]], axis=0), probs_lr, '*')
-        hr1f, hr2f, lrf, rf = 0.99, 0.9, 0.7, 0.3
+        hr1f, hr2f, lrf, rf = 0.9, 0.8, 0.5, 0.4
         cond_hr1 = (probs_hr[0] > hr1f or probs_hr[-1] > hr1f)
         cond_hr2 = probs_hr[0] > hr2f
         cond_lr = lrf < probs_lr[0] < 1.
         cond_range = ord_range_x - ord_range_1s < rf if x1 != x2 else False
-        cond_limit = cond_hr1
+        cond_limit = cond_hr1 or cond_hr2
         cond_range = (cond_range or (not cond_range and cond_hr2)
                       or (not cond_range and not cond_hr2 and cond_lr))
         if cond_limit:
@@ -3866,6 +3883,16 @@ def evaluate_distr(distr, domain=None, function=None, args=None,
             x1, x2 = add_zero_infs([x1, x2], zero_log+6, inf_log-6)
             main = [x1, x2]
             unc = [0, 0]
+    
+    is_range = type(main) is list and np.isfinite(x2-x1)
+    if is_range:
+        dist = [main[0] - domain[0], domain[1] - main[1]]
+        rel_dist = np.array(dist) / (main[1] - main[0])
+        threshold = 0.01
+        if rel_dist[0] < threshold:
+            main[0] = domain[0]
+        if rel_dist[1] < threshold:
+            main[1] = domain[1]
     
     rvalue = RichValue(main, unc, domain=domain, is_int=is_int)
     
@@ -4043,7 +4070,6 @@ def function_with_rich_values(function, args, unc_function=None,
     if type(function) is str:
         variables = (list(np.concatenate(tuple(arg.variables for arg in args)))
                      if len(args) > 0 else [])
-        variables = list(set(variables))
         vars_str = ','.join(variables)
         expressions = [arg.expression for arg in args]
         function = function.replace('{}','({})')
@@ -4098,6 +4124,9 @@ def function_with_rich_values(function, args, unc_function=None,
             use_analytic_propagation = False
     
     args_main = np.array([arg.main for arg in args])
+    # print()
+    # print(args)
+    # print(args[0].expression)
     with np.errstate(divide='ignore', invalid='ignore'):
         main = function(*args_main)
     output_size = np.array(main).size
@@ -4185,6 +4214,7 @@ def function_with_rich_values(function, args, unc_function=None,
         if unc_function is not None:
             args_unc = [np.array(arg.unc) for arg in args]
             uncs = unc_function(*args_main, *args_unc)
+            uncs = [uncs] if output_size == 1 else uncs
             if output_size > 1:
                 for k in range(output_size):
                     if not hasattr(uncs[k], '__iter__'):
@@ -4204,8 +4234,8 @@ def function_with_rich_values(function, args, unc_function=None,
                 for (j,arg) in enumerate(args):
                     args_combs[i] += [args_all_vals[j][inds[j]]]
             combinations = [function(*args_comb) for args_comb in args_combs]
-            uncs = [[mains[k] - np.min(combinations[:][k]),
-                     np.max(combinations[:][k]) - mains[k]]
+            uncs = [[mains[k] - np.min(combinations),
+                     np.max(combinations) - mains[k]]
                     for k in range(output_size)]
         output = []
         for k in range(output_size):
@@ -4471,7 +4501,10 @@ def errorbar(x, y, lims_factor=None, **kwargs):
         xc = xc[np.isfinite(xc)]
         if len(xc) > 0:
             with np.errstate(divide='ignore', invalid='ignore'):
-                r = abs(linregress(xc, np.arange(len(xc))).rvalue)
+                try:
+                    r = abs(linregress(xc, np.arange(len(xc))).rvalue)
+                except:
+                    r = 0
         else:
             r = 0
         factor = 2. + 12.*r**8
