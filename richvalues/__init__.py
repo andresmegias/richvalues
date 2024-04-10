@@ -37,7 +37,7 @@ IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 """
 
-__version__ = '4.0.4'
+__version__ = '4.0.6'
 __author__ = 'Andrés Megías Toledano'
 
 import copy
@@ -231,11 +231,15 @@ def round_sf_unc(x, dx, n=None, min_exp=None, extra_sf_lim=None):
         if not use_exp:
             m = len(dy.split('.')[1]) if '.' in dy else 0
             y = '{:.{}f}'.format(x, m) if x != 0. else '0'
-            if m <= 0:
+            if m == 0:
                 num_digits_y = len(y)
                 num_digits_dy = len(dy)
                 m = n + int(num_digits_y - num_digits_dy)
-                if float(dy[0]) <= extra_sf_lim:
+                num_digits_x = len(str(x).split('.')[0])
+                if num_digits_y > num_digits_x:
+                    m -= 1
+                base_dy = '{:e}'.format(float(dy)).split('e')[0]
+                if float(base_dy) <= extra_sf_lim:
                     m += 1
                 y = round_sf(x, m, min_exp, extra_sf_lim=1-1e-8)
         else:
@@ -243,7 +247,7 @@ def round_sf_unc(x, dx, n=None, min_exp=None, extra_sf_lim=None):
             base_dy, exp_dy = '{:e}'.format(dx).split('e')
             exp_y, exp_dy = int(exp_y), int(exp_dy)
             d = exp_dy - exp_y
-            if x != 0. and d < 0.:
+            if x != 0. and d < 0:
                 o = 1 if float(base_dy) <= extra_sf_lim else 0
                 m = max(n+d+o, n)
                 min_exp_ = np.inf
@@ -254,8 +258,7 @@ def round_sf_unc(x, dx, n=None, min_exp=None, extra_sf_lim=None):
                 base_dy = '{:.{}f}'.format(float(base_dy), m)
                 y = '{}e{}'.format(base_y, exp_y)
                 dy = '{}e{}'.format(base_dy, exp_y)
-            else:
-                base_y, exp_y = '{:e}'.format(x).split('e')
+            elif d == 0:
                 if 'e' in dy:
                     base_dy, exp_dy = dy.split('e')
                 else:
@@ -264,6 +267,10 @@ def round_sf_unc(x, dx, n=None, min_exp=None, extra_sf_lim=None):
                 base_y = ('{:.{}f}'.format(float(base_y)*10**(-d), m) if x != 0
                           else '0')
                 y = '{}e{}'.format(base_y, exp_dy)
+            else:
+                f = 10**(-int(exp_y))
+                base_y, dy = round_sf_unc(x*f, dx*f, n, np.inf, extra_sf_lim)
+                y = '{}e{}'.format(base_y, exp_y)
     elif dx == 0:
         y = round_sf(x, n, min_exp, extra_sf_lim)
         dy = '0e0'
@@ -333,8 +340,10 @@ def round_sf_uncs(x, dx, n=None, min_exp=None, extra_sf_lim=None):
         diff = num_dec_1 - num_dec_2
         off1, off2 = 0, 0
         if num_dec_1 == 0 == num_dec_2:
-            b1 = float(str(dy1)[0]) if np.isfinite(dx1) else 10.
-            b2 = float(str(dy2)[0]) if np.isfinite(dx2) else 10.
+            base_dy1 = '{:e}'.format(dx1).split('e')[0]
+            base_dy2 = '{:e}'.format(dx2).split('e')[0]
+            b1 = float(base_dy1) if np.isfinite(dx1) else 10.
+            b2 = float(base_dy2) if np.isfinite(dx2) else 10.
             if dx2 > dx1 and b1 <= extra_sf_lim and b2 > extra_sf_lim:
                 off2 = 1
             if dx1 > dx2 and b2 <= extra_sf_lim and b1 > extra_sf_lim:
@@ -939,13 +948,13 @@ class RichValue():
                     elif is_uplim:
                         symbol = '<'
                         y = int(np.ceil(x)) if is_int else x  
-                    min_exp = 0
                     y = round_sf(y, n, min_exp, extra_sf_lim)
-                    y, a = y.split('e')
-                    a = str(int(a))
+                    if 'e' in y:
+                        y, a = y.split('e')
+                    else:
+                        a = '0'
                     text = ('${} {} {}'.format(symbol, y, mult_symbol)
                             + ' 10^{'+a+'}$')
-                text = text.replace('e-0', 'e-').replace('e+','e')
                 a = int(text.split('10^{')[1].split('}')[0])
                 if abs(a) < min_exp:
                     y = RichValue(x, dx, is_lolim, is_uplim,
@@ -956,7 +965,8 @@ class RichValue():
                     text = y.latex(*kwargs)
                 if (not use_extra_sf_in_exacts and omit_ones_in_sci_notation
                      and dx[0] == dx[1] and dx[0] == 0 or np.isnan(dx[0])):
-                    text = text.replace('1 {} '.format(mult_symbol), '')
+                    if '.' not in text:
+                        text = text.replace('1 {} '.format(mult_symbol), '')
             else:
                 x1 = RichValue(main - unc[0], domain=domain)
                 x2 = RichValue(main + unc[1], domain=domain)
@@ -1058,7 +1068,7 @@ class RichValue():
         is_other_numeric = type(other) is not RichValue
         expression = ('{}+{}'.format(self.expression, other_expression)
                       .replace('+-','-'))
-        variables = set(self.variables + other_vars)
+        variables = list(dict.fromkeys(self.variables + other_vars).keys())
         common_vars = set(self.variables) & set(other_vars)
         if len(common_vars) == 0:
             if is_other_numeric:
@@ -1107,7 +1117,7 @@ class RichValue():
             other_expression = str(other)
         is_other_numeric = type(other) is not RichValue
         expression = '({})*({})'.format(self.expression, other_expression)
-        variables = set(self.variables + other_vars)
+        variables = list(dict.fromkeys(self.variables + other_vars).keys())
         common_vars = set(self.variables) & set(other_vars)
         if len(common_vars) == 0:
             if is_other_numeric:
@@ -1151,7 +1161,7 @@ class RichValue():
             other_expression = str(other)
         is_other_numeric = type(other) is not RichValue
         expression = '({})/({})'.format(self.expression, other_expression)
-        variables = set(self.variables + other_vars)
+        variables = list(dict.fromkeys(self.variables + other_vars).keys())
         common_vars = set(self.variables) & set(other_vars)
         if len(common_vars) == 0:
             if is_other_numeric:
@@ -1236,7 +1246,7 @@ class RichValue():
             other_vars = []
             other_expression = str(other)
         expression = '({})**({})'.format(self.expression, other_expression)
-        variables = set(self.variables + other_vars)
+        variables = list(dict.fromkeys(self.variables + other_vars).keys())
         common_vars = set(self.variables) & set(other_vars)
         if len(common_vars) == 0:
             sigmas = defaultparams['sigmas to use approximate '
@@ -2657,7 +2667,7 @@ def add_rich_values(x, y):
     is_int = x.is_int and y.is_int
     domain = [x.domain[0] + y.domain[0], x.domain[1] + y.domain[1]]
     sigmas = defaultparams['sigmas to use approximate uncertainty propagation']
-    if x.is_exact or y.is_exact:
+    if (x.is_exact or y.is_exact) and (x.is_interv or y.is_interv):
         z = list(np.array(x.interval()) + np.array(y.interval()))
         z = RichValue(z, domain=domain, is_int=is_int)
     elif (not (x.is_interv or y.is_interv)
@@ -2681,7 +2691,7 @@ def multiply_rich_values(x, y):
     is_int = x.is_int and y.is_int
     domain = propagate_domain(x.domain, y.domain, lambda a,b: a*b)
     sigmas = defaultparams['sigmas to use approximate uncertainty propagation']
-    if x.is_exact or y.is_exact:
+    if (x.is_exact or y.is_exact) and (x.is_interv or y.is_interv):
         z = list(np.array(x.interval()) * np.array(y.interval()))
         z = RichValue(z, domain=domain, is_int=is_int)
     elif (not (x.is_interv or y.is_interv)
@@ -2998,8 +3008,13 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
                             text = text[1:]
                         else:
                             x = text.split('-')[0]
-                        dx1 = text.split('-')[1].split('+')[0]
-                        dx2 = text.split('+')[1].split(' ')[0]
+                        if '+' not in x:
+                            dx1 = text.split('-')[1].split('+')[0]
+                            dx2 = text.split('+')[1].split(' ')[0]
+                        else:
+                            x = x.split('+')[0]
+                            dx2 = text.split('+')[1].split('-')[0]
+                            dx1 = text.split('-')[1].split(' ')[0]
                     else:
                         x = text.split(' ')[0]
                         dx1, dx2 = '0', '0'
@@ -3041,7 +3056,7 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
                     base = float('{:e}'.format(eval(val)).split('e')[0])
                     if base <= default_extra_sf_lim:
                         if num_sf < default_num_sf + 1:
-                            extra_sf_lim = base - 1e-8               
+                            extra_sf_lim = base - 1e-8        
             else:
                 extra_sf_lim = default_extra_sf_lim
             x = x.replace('e0','')
@@ -3059,7 +3074,7 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
             unc = 0
             is_lolim, is_uplim, is_range = False, False, True
             min_exp = round(np.mean([me1, me2]))
-            extra_sf_lim = min(el1, el2)
+            extra_sf_lim = max(el1, el2)
         return (main, unc, is_lolim, is_uplim, is_range, domain,
                 min_exp, extra_sf_lim)
     
@@ -3192,7 +3207,7 @@ def rich_array(array, domain=None, is_int=None,
     rarray = RichArray(mains, uncs, are_lolims, are_uplims, are_ranges,
                        domains, are_ints, variables, expressions)
     min_exp = round(np.mean(min_exps))
-    extra_sf_lim = min(extra_sf_lims)
+    extra_sf_lim = max(extra_sf_lims)
     rarray.set_params({'min_exp': min_exp, 'extra_sf_lim': extra_sf_lim})
     return rarray
 
@@ -3571,7 +3586,7 @@ def loguniform_distribution(low=-1, high=1, size=1,
     return distr
 
 def distr_with_rich_values(function, args, len_samples=None,
-                           is_vectorizable=False):
+                           is_vectorizable=False, **kwargs):
     """
     Same as function_with_rich_values, but just returns the final distribution.
     """
@@ -3581,7 +3596,7 @@ def distr_with_rich_values(function, args, len_samples=None,
             else arg for arg in args]
     if type(function) is str:
         variables = list(np.concatenate(tuple(arg.variables for arg in args)))
-        variables = list(set(variables))
+        variables = list(dict.fromkeys(variables).keys())
         vars_str = ','.join(variables)
         expressions = [arg.expression for arg in args]
         function = function.replace('{}','({})')
@@ -3677,7 +3692,7 @@ def remove_zero_infs(interval, zero_log, inf_log):
     return new_interval
 
 def evaluate_distr(distr, domain=None, function=None, args=None,
-            len_samples=None, is_vectorizable=False, consider_intervs=True,
+            len_samples=None, is_vectorizable=False, consider_intervs=None,
             is_domain_cyclic=False, lims_fraction=None, num_reps_lims=None,
             save_pdf=None, **kwargs):
     """
@@ -3738,7 +3753,7 @@ def evaluate_distr(distr, domain=None, function=None, args=None,
     input_function = copy.copy(function)
     if type(function) is str:
         variables = list(np.concatenate(tuple(arg.variables for arg in args)))
-        variables = list(set(variables))
+        variables = list(dict.fromkeys(variables).keys())
         vars_str = ','.join(variables)
         expressions = [arg.expression for arg in args]
         function = function.replace('{}','({})')
@@ -3765,8 +3780,13 @@ def evaluate_distr(distr, domain=None, function=None, args=None,
     if args is not None:
         if type(args) not in (tuple, list):
             args = [args]
-        args = [rich_value(arg) if type(arg) not in
-                (RichValue, ComplexRichValue) else arg for arg in args]
+        if type(args[0]) is not RichArray:
+            args = [rich_value(arg) if type(arg) not in
+                    (RichValue, ComplexRichValue) else arg for arg in args]
+    if consider_intervs is None:
+        consider_intervs = True
+        if args is not None and all([arg.is_centr for arg in args]):
+            consider_intervs = False
         
     distr = np.array(distr)
     
@@ -4065,11 +4085,13 @@ def function_with_rich_values(function, args, unc_function=None,
         args = [args]
     args = [rich_value(arg) if type(arg) not in (RichValue, ComplexRichValue)
             else arg for arg in args]
+    args_copy = copy.copy(args)
     
     input_function = copy.copy(function)
     if type(function) is str:
         variables = (list(np.concatenate(tuple(arg.variables for arg in args)))
                      if len(args) > 0 else [])
+        variables = list(dict.fromkeys(variables).keys())
         vars_str = ','.join(variables)
         expressions = [arg.expression for arg in args]
         function = function.replace('{}','({})')
@@ -4107,7 +4129,7 @@ def function_with_rich_values(function, args, unc_function=None,
             
     if len_samples is None:
         len_samples = int(len(args)**0.5 * defaultparams['size of samples'])
-    num_sf = min([arg.num_sf for arg in args])
+    num_sf = int(np.median([arg.num_sf for arg in args]))
     min_exp = round(np.mean([arg.min_exp for arg in args]))
     extra_sf_lim = max([arg.extra_sf_lim for arg in args])
     
@@ -4124,9 +4146,6 @@ def function_with_rich_values(function, args, unc_function=None,
             use_analytic_propagation = False
     
     args_main = np.array([arg.main for arg in args])
-    # print()
-    # print(args)
-    # print(args[0].expression)
     with np.errstate(divide='ignore', invalid='ignore'):
         main = function(*args_main)
     output_size = np.array(main).size
@@ -4212,16 +4231,14 @@ def function_with_rich_values(function, args, unc_function=None,
         
         mains = [main] if output_size == 1 else main
         if unc_function is not None:
-            args_unc = [np.array(arg.unc) for arg in args]
-            uncs = unc_function(*args_main, *args_unc)
+            uncs = []
+            args_main = np.array([arg.main for arg in args_copy])
+            for i in (0,1):
+                args_unc = [arg.unc[i] for arg in args_copy]
+                uncs += [unc_function(*args_main, *args_unc)]
             uncs = [uncs] if output_size == 1 else uncs
-            if output_size > 1:
-                for k in range(output_size):
-                    if not hasattr(uncs[k], '__iter__'):
-                        uncs[k] = [uncs[k]]*2
-                    uncs[k][1] = abs(uncs[k][1])
-            if not hasattr(uncs,'__iter__'):
-                uncs = [uncs]*output_size
+            for k in range(output_size):
+                uncs[k][1] = abs(uncs[k][1])
         else:
             inds_combs = list(itertools.product(*[[0,1,2]]*len(args)))
             comb_main = tuple([1]*len(args))
@@ -4249,6 +4266,9 @@ def function_with_rich_values(function, args, unc_function=None,
                 real_k = RichValue(main_k.real, unc_k.real, domain=domain_k)
                 imag_k = RichValue(main_k.imag, unc_k.imag, domain=domain_k)
                 rval_k = ComplexRichValue(real_k, imag_k)
+            rval_k.num_sf = num_sf
+            rval_k.min_exp = min_exp
+            rval_k.extra_sf_lim = extra_sf_lim
             output += [rval_k]
             
     else:
@@ -4324,6 +4344,37 @@ def function_with_rich_arrays(function, args, elementwise=False, **kwargs):
     output : rich array / rich value
         Result of the function.
     """
+    if 'domain' in kwargs:
+        domain = kwargs['domain']
+        del kwargs['domain']
+    else:
+        domain = None
+    distr = distr_with_rich_arrays(function, args, elementwise, **kwargs)
+    if len(distr.shape) == 1:
+        output = evaluate_distr(distr, domain, function, args, **kwargs)
+    else:
+        output_size = distr.shape[1]
+        output = []
+        for k in range(output_size):
+            function_k = lambda *args: function(args)[k]
+            rval_k = evaluate_distr(distr[:,k], domain, function_k, args,
+                                    **kwargs)
+            output += [rval_k]
+        args_main = np.array([arg.main for arg in args])
+        with np.errstate(divide='ignore', invalid='ignore'):
+            main = function(*args_main)
+        output_size = np.array(main).size
+        output_type = RichArray if type(main) is np.ndarray else type(main)
+        if output_type is tuple and output_size > 1:
+            output = tuple(output)
+        elif output_type is RichArray:
+            output = np.array(output).view(RichArray)
+    return output
+
+def distr_with_rich_arrays(function, args, elementwise=False, **kwargs):
+    """
+    Same as function_with_rich_arrays, but just returns the final distribution.
+    """
     if type(args) not in (tuple, list):
         args = [args]
     args = [rich_array(arg) if type(arg) != RichArray else arg
@@ -4339,6 +4390,8 @@ def function_with_rich_arrays(function, args, elementwise=False, **kwargs):
     if 'len_samples' not in kwargs:
         kwargs['len_samples'] = int(len(args)**0.5
                                     * defaultparams['size of samples'])
+    if 'consider_intervs' in kwargs:
+        del kwargs['consider_intervs']
     if elementwise:
         same_shapes = True
         for arg in args[1:]:
@@ -4347,15 +4400,14 @@ def function_with_rich_arrays(function, args, elementwise=False, **kwargs):
                 break
         if not same_shapes:
             raise Exception('Input arrays have different shapes.')
-        array = np.empty(0, RichValue)
+        array = np.empty(0, float)
         args_flat = np.array([arg.flatten() for arg in args])
         for i in range(args[0].size):
             args_i = np.array(args_flat)[:,i].tolist()
-            rvalue = function_with_rich_values(function, args_i, **kwargs)
+            rvalue = distr_with_rich_values(function, args_i, **kwargs)
             array = np.append(array, rvalue)
         if shape == ():
             array = np.array(array[0])
-        array = array.view(RichArray)
         output = array
     else:
         if type(function) is str:
@@ -4398,7 +4450,7 @@ def function_with_rich_arrays(function, args, elementwise=False, **kwargs):
             alt_args = []
             for arg in args:
                 alt_args += list(arg.flat)
-        output = function_with_rich_values(alt_function, alt_args, **kwargs)
+        output = distr_with_rich_values(alt_function, alt_args, **kwargs)
     return output
 
 def fmean(array, function='None', inverse_function='None',
@@ -4512,12 +4564,12 @@ def errorbar(x, y, lims_factor=None, **kwargs):
     xa, ya = rich_array(x), rich_array(y)
     xc = rich_array([x]) if len(xa.shape) == 0 else xa
     yc = rich_array([y]) if len(ya.shape) == 0 else ya
-    if lims_factor is None:
-        lims_factor_x, lims_factor_y = None, None
-    elif type(lims_factor) in (float, int):
+    if type(lims_factor) in (float, int):
         lims_factor_x, lims_factor_y = [lims_factor]*2
     elif type(lims_factor) in (list, tuple):
         lims_factor_x, lims_factor_y = lims_factor
+    else:
+        lims_factor_x, lims_factor_y = None, None
     if lims_factor_x is None:
         lims_factor_x = lim_factor(xc)
     if lims_factor_y is None:
@@ -4967,6 +5019,7 @@ rich_df = rdataframe = rich_dataframe
 function = function_with_rich_values
 array_function = function_with_rich_arrays
 distribution = distr_with_rich_values
+array_distribution = distr_with_rich_arrays
 evaluate_distribution = evaluate_distr
 center_and_uncertainties = center_and_uncs
 is_not_a_number = is_nan = isnan
