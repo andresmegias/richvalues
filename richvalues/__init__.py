@@ -37,7 +37,7 @@ IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 """
 
-__version__ = '4.1.1'
+__version__ = '4.1.2'
 __author__ = 'Andrés Megías Toledano'
 
 import copy
@@ -3112,7 +3112,7 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
                 if ')' in text:
                     if text.count(')') == 1:
                         x, dx = x_dx.split('(')
-                        dx = dx[:-1]
+                        dx = dx.split(')')[0]
                         dx1, dx2 = dx
                     else:
                         x, dx1, dx2 = x_dx.split('(')
