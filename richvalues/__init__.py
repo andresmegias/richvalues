@@ -803,6 +803,8 @@ class RichValue():
                     else:
                         text = '{}-{}+{} e{}'.format(y, dy1, dy2, a)
                 else:
+                    dy1 = dy1.replace('(-', '(')
+                    dy2 = dy2.replace('(+', '(')
                     if dy1 == dy2:
                         text = '{}{} e{}'.format(y, dy1, a)
                     else:
