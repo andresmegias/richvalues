@@ -37,7 +37,7 @@ IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 """
 
-__version__ = '4.1.3'
+__version__ = '4.1.5'
 __author__ = 'Andrés Megías Toledano'
 
 import copy
@@ -2998,7 +2998,7 @@ def less_equiv(x, y, sigmas_interval=None, sigmas_overlap=None):
     return output
 
 def rich_value(text=None, domain=None, is_int=None, pdf=None,
-               use_default_extra_sf_lim=False):
+               consider_intervs=True, use_default_extra_sf_lim=False):
     """
     Convert the input text to a rich value.
 
@@ -3016,6 +3016,10 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
     pdf : function / dict, optional
         Probability density function (PDF) that defines the rich value. It can
         be specified instead of the text representing the rich value.
+    consider_intervs : bool, optional
+        If the PDF is given, this variable determines if we consider the
+        possibility that the rich value is an upper/lower limit or a finite
+        interval of values. By default, it is True.
     use_default_extra_sf_lim : bool, optional
         If True, the default limit for extra significant figure will be used
         instead of inferring it from the input text. This will reduce the
@@ -3027,8 +3031,7 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
         Resulting rich value.
     """
 
-    if ('function' in str(type(text)) or type(text) in
-                                        (dict, tuple, list, np.ndarray)):
+    if ('function' in str(type(text)) or type(text) in (dict, tuple, list, np.ndarray)):
         pdf = text
         text = None
     else:
@@ -3255,8 +3258,8 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
         distr = sample_from_pdf(pdf_, size=4e4, low=domain[0], high=domain[1])
         if is_int:
             distr = np.round(distr).astype(int)
-        rvalue = evaluate_distr(distr, domain)
-        x1, x2 = rvalue.interval(4.)
+        rvalue = evaluate_distr(distr, domain, consider_intervs=consider_intervs)
+        x1, x2 = rvalue.interval(8.)
         x = np.linspace(x1, x2, int(1e4))
         y = pdf_(x)
         norm = np.trapz(y, x)
@@ -4076,11 +4079,11 @@ def evaluate_distr(distr, domain=None, function=None, args=None,
         rvalue.expression = expression
     
     if save_pdf:
-        x1, x2 = rvalue.interval(3.)
+        x1, x2 = rvalue.interval(8.)
         if is_int and is_range_small:
             bins = np.arange(x1, x2+2) - 0.5
         else:
-            num_bins = max(80, size//200)
+            num_bins = max(120, size//100)
             bins = np.linspace(x1, x2, num_bins)
         probs, _ = np.histogram(distr, bins=bins, density=True)
         values = np.mean([bins[0:-1], bins[1:]], axis=0)
@@ -4410,8 +4413,7 @@ def function_with_rich_values(function, args, unc_function=None,
             if prop_score > lim1:
                 factor = 1. - 0.5 * (min(prop_score,20.)-lim1) / (lim2-lim1)
                 len_samples = int(factor * len_samples)
-        distr = distr_with_rich_values(function, args, len_samples,
-                                       is_vectorizable)
+        distr = distr_with_rich_values(function, args, len_samples, is_vectorizable)
         if output_size == 1 and len(distr.shape) == 1:
             distr = np.array([distr]).transpose()
         output = []
