@@ -6,7 +6,7 @@ Rich Values Library
 -------------------
 Version 4.2
 
-Copyright (C) 2024 - Andrés Megías Toledano
+Copyright (C) 2025 - Andrés Megías Toledano
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are
@@ -37,7 +37,7 @@ IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 """
 
-__version__ = '4.2.0'
+__version__ = '4.2.1'
 __author__ = 'Andrés Megías Toledano'
 
 import copy
@@ -592,6 +592,15 @@ class RichValue():
             x = [x, x]
         x = list(x)
         self._unc = x
+        global variable_count
+        variable_count += 1
+        variable = 'x{}'.format(variable_count)
+        variables = [variable]
+        expression = variable
+        self.variables = variables
+        self.expression = expression
+        global variable_dict
+        variable_dict[expression] = self
          
     @property
     def is_lim(self):
@@ -675,14 +684,23 @@ class RichValue():
             s_a = [np.nan]*2
         return s_a
     @property
+    def unc_asymmetry(self):
+        """Asymmetry of the uncertainties, as its maximum ratio."""
+        if self.is_centr:
+            s1, s2 = np.abs(self.unc)
+            f = max(s1/s2, s2/s1)
+        return f
+    @property
     def prop_score(self):
-        """Minimum of the signals-to-noise and the relative amplitudes."""
+        """Propagation score, to determine the non-normal behaviour."""
         if self.is_exact:
             ps = np.inf
         elif self.is_centr:
             s_n = self.signal_noise
             a_s = self.rel_ampl
             ps = np.min([s_n, a_s])
+            f = self.unc_asymmetry
+            ps /= (1. + 8.*(f-1.))
         else:
             ps = 0.
         return ps
@@ -1388,21 +1406,21 @@ class RichValue():
     
     def __floordiv__(self, other):
         type_other = str(type(other))
-        other_ = (RichValue(other, is_int=(type(other) is int))
+        other_ = (RichValue(other, is_int=('int' in str(type(other))))
                   if 'int' in type_other or 'float' in type_other else other)
         rvalue = function_with_rich_values('{}//{}', [self, other_])
         return rvalue
 
     def __rfloordiv__(self, other):
         type_other = str(type(other))
-        other_ = (RichValue(other, is_int=(type(other) is int))
+        other_ = (RichValue(other, is_int=('int' in str(type(other))))
                   if 'int' in type_other or 'float' in type_other else other)
         other_ = RichValue(other) if type(other) is not RichValue else other
         return other_ // self
 
     def __mod__(self, other):
         type_other = str(type(other))
-        other_ = (RichValue(other, is_int=(type(other) is int))
+        other_ = (RichValue(other, is_int=('int' in str(type(other))))
                   if 'int' in type_other or 'float' in type_other else other)
         domain = other_.interval(6.)
         if domain[0] > 0 and other_.sign() != -1:
@@ -1452,7 +1470,7 @@ class RichValue():
                 x = self.main ** other
                 dx = (np.abs(x * other * np.array(self.unc) / self.main)
                       if (x*other) != 0. else 0.)
-                is_int = self.is_int and type(other) is int
+                is_int = self.is_int and 'int' in str(type(other))
                 if domain != [-np.inf, np.inf]:
                     if domain[0] != 0 or (domain[0] == 0 and other>0):
                         x1 = domain[0] ** other
@@ -1519,7 +1537,7 @@ class RichValue():
             main = self.main
             unc = self.unc
             domain = copy.copy(self.domain)
-            if type(x) in (int, float):
+            if not hasattr(x, '__iter__'):
                 x = [x]
             x = np.array(x)
             y = np.zeros(len(x))
@@ -1694,7 +1712,7 @@ class RichArray(np.ndarray):
     
     def __new__(cls, mains=None, uncs=None, are_lolims=None, are_uplims=None,
                 are_ranges=None, domains=None, are_ints=None,
-                variables=None, expressions=None, **kwargs):
+                variables=None, expressions=None, pdf_infos=None, **kwargs):
         """
         Parameters
         ----------
@@ -1823,6 +1841,8 @@ class RichArray(np.ndarray):
             if variables is not None and expressions is not None:
                 array[i].variables = variables[i]
                 array[i].expression = expressions[i]
+            if pdf_infos is not None:
+                array[i].pdf_info = pdf_infos[i]
         array = array.reshape(mains.shape)
         array = array.view(cls)
         return array
@@ -2898,7 +2918,7 @@ class ComplexRichValue():
         is_other_real = (type(other) not in (RichValue, ComplexRichValue)
                          and 'complex' not in str(type(other)))
         if is_other_real:
-            is_int = type(other) is int
+            is_int = 'int' in str(type(other))
             other_ = RichValue(other, is_int=is_int)
             other_.variables = []
             other_.expression = str(other)
@@ -3489,15 +3509,18 @@ def rich_array(array, domain=None, is_int=None,
     shape = array.shape
     mains, uncs, are_lolims, are_uplims, are_ranges, domains, are_ints = \
         [], [], [], [], [], [], []
-    min_exps, extra_sf_lims, variables, expressions = [], [], [], []
+    min_exps, extra_sf_lims, variables, expressions, pdf_infos = \
+        [], [], [], [], []
     for entry in array.flat:
         if type(entry) in (RichValue, ComplexRichValue):
             if domain is not None:
                 entry.domain = domain
             if is_int is not None:
                 entry.is_int = is_int
+            pdf_info = entry.pdf_info
         else:
             entry = rich_value(entry, domain, is_int, use_default_extra_sf_lim)
+            pdf_info = 'default'
         mains += [entry.main]
         uncs += [entry.unc]
         are_lolims += [entry.is_lolim]
@@ -3509,6 +3532,7 @@ def rich_array(array, domain=None, is_int=None,
         extra_sf_lims += [entry.extra_sf_lim]
         variables += [entry.variables]
         expressions += [entry.expression]
+        pdf_infos += [pdf_info]
     mains = np.array(mains).reshape(shape)
     uncs = np.array(uncs)
     uncs = (np.array([uncs[:,0].reshape(shape).tolist(),
@@ -3523,7 +3547,7 @@ def rich_array(array, domain=None, is_int=None,
                .transpose().reshape((*shape, 2)))
     are_ints = np.array(are_ints).reshape(shape)
     rarray = RichArray(mains, uncs, are_lolims, are_uplims, are_ranges,
-                       domains, are_ints, variables, expressions)
+                       domains, are_ints, variables, expressions, pdf_infos)
     min_exp = round(np.mean(min_exps))
     extra_sf_lim = max(extra_sf_lims)
     rarray.set_params({'min_exp': min_exp, 'extra_sf_lim': extra_sf_lim})
@@ -3607,6 +3631,28 @@ def rich_dataframe(df, domains=None, are_ints=None, ignore_columns=[],
                 df.at[i,col] = entry
     rdf = RichDataFrame(df)
     return rdf
+
+def gaussian(x, m=0., s=1.):
+    """
+    Parameters
+    ----------
+    x : array (float)
+        Independent variable.
+    m : float, optional
+        Mean of the curve. The default is 0.
+    s : float, optional
+        Standard deviation of the curve.
+        The default is 1.
+
+    Returns
+    -------
+    y : array (float)
+        Resulting array.
+    """
+    sqrt_tau = 2.50662827
+    y = np.exp(-0.5 * ((x-m) / s)**2)
+    y /= s * sqrt_tau
+    return y
 
 def bounded_gaussian(x, m=0., s=1., a=np.inf):
     """
@@ -3724,7 +3770,7 @@ def qsplitgaussian(x, m=0., s1=1., s2=1., num_points=1200, sigmas=8.,
         Resulting array.
     """
     alpha = 0.15865
-    if type(x) in (int, float):
+    if not hasattr(x, '__iter__'):
         x = [x]
     x = np.array(x)
     x_ = np.linspace(m - sigmas*s1, m + sigmas*s2, num_points)
@@ -3772,7 +3818,7 @@ def qgenextreme(x, m=0., s1=1., s2=1., num_points=800, sigmas=12.,
         Resulting array.
     """
     alpha = 0.15865
-    if type(x) in (int, float):
+    if not hasattr(x, '__iter__'):
         x = [x]
     x = np.array(x)
     x_ = np.linspace(m - s1*sigmas, m + s2*sigmas, num_points)
@@ -4146,6 +4192,8 @@ def distr_with_rich_values(function, args, len_samples=None,
     """
     Same as function_with_rich_values, but just returns the final distribution.
     """
+    len_samples = (int(len_samples) if len_samples is not None else
+                   int(len(args)**0.5 * defaultparams['size of samples']))
     if type(args) not in (tuple, list):
         args = [args]
     args = [rich_value(arg) if type(arg) not in (RichValue, ComplexRichValue)
@@ -4371,8 +4419,16 @@ def evaluate_distr(distr, domain=None, function=None, args=None,
                     (RichValue, ComplexRichValue) else arg for arg in args]
     if consider_intervs is None:
         consider_intervs = True
-        if args is not None and all([arg.is_centr for arg in args]):
-            consider_intervs = False
+        if args is not None:
+            if type(args[0]) is RichValue:
+                all_args = [arg for arg in args]
+            elif type(args[0]) is RichArray:
+                all_args = []
+                for arg in args:
+                    for xi in arg:
+                        all_args += [xi]
+            if all([arg.is_centr for arg in all_args]):
+                consider_intervs = False
         
     distr = np.array(distr)
     
@@ -5042,6 +5098,7 @@ def distr_with_rich_arrays(function, args, elementwise=False, **kwargs):
             alt_args = []
             for arg in args:
                 alt_args += list(arg.flat)
+        distr = []
         output = distr_with_rich_values(alt_function, alt_args, **kwargs)
     return output
 
@@ -5156,7 +5213,7 @@ def errorbar(x, y, lims_factor=None, **kwargs):
     xa, ya = rich_array(x), rich_array(y)
     xc = rich_array([x]) if len(xa.shape) == 0 else xa
     yc = rich_array([y]) if len(ya.shape) == 0 else ya
-    if type(lims_factor) in (float, int):
+    if not hasattr(lims_factor, '__iter__'):
         lims_factor_x, lims_factor_y = [lims_factor]*2
     elif type(lims_factor) in (list, tuple):
         lims_factor_x, lims_factor_y = lims_factor
