@@ -13,12 +13,12 @@ modification, are permitted provided that the following conditions are
 met:
 
     (1) Redistributions of source code must retain the above copyright
-    notice, this list of conditions and the following disclaimer. 
+    notice, this list of conditions and the following disclaimer.
 
     (2) Redistributions in binary form must reproduce the above copyright
     notice, this list of conditions and the following disclaimer in
     the documentation and/or other materials provided with the
-    distribution.  
+    distribution.
     
     (3) The name of the author may not be used to endorse or promote
     products derived from this software without specific prior written
@@ -37,7 +37,7 @@ IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 """
 
-__version__ = '4.2.1'
+__version__ = '4.2.2'
 __author__ = 'Andrés Megías Toledano'
 
 import copy
@@ -275,7 +275,8 @@ def round_sf_unc(x, dx, n=None, min_exp=None, max_dec=None, extra_sf_lim=None):
                 y = '{}e{}'.format(base_y, exp_dy)
             else:
                 f = 10**(-int(exp_y))
-                base_y, base_dy = round_sf_unc(x*f, dx*f, n, np.inf, max_dec, extra_sf_lim)
+                base_y, base_dy = round_sf_unc(x*f, dx*f, n,
+                                               np.inf, max_dec, extra_sf_lim)
                 y = '{}e{}'.format(base_y, exp_y)
             dy = '{}e{}'.format(base_dy, exp_y)
             if len(dy) > len(y)+1:
@@ -311,7 +312,8 @@ def round_sf_unc(x, dx, n=None, min_exp=None, max_dec=None, extra_sf_lim=None):
         else:
             exp = None
         d = len(y.split('.')[-1])
-        dy_ = round_sf(float(dy)*10**d, n, min_exp=np.inf, extra_sf_lim=0.)
+        d_ = len(dy.split('.')[-1])
+        dy_ = round_sf(float(dy)*10**(d-d_), n, 0, extra_sf_lim)
         dy = '(' + dy_.split('e')[0] + ')'
         if exp is not None:
             y = '{}e{}'.format(y, exp)
@@ -354,45 +356,48 @@ def round_sf_uncs(x, dx, n=None, min_exp=None, max_dec=None, extra_sf_lim=None):
     dx1, dx2 = dx
     y1, dy1 = round_sf_unc(x, dx1, n, min_exp, max_dec, extra_sf_lim)
     y2, dy2 = round_sf_unc(x, dx2, n, min_exp, max_dec, extra_sf_lim)
-    if 'e' in y1 and 'e' not in y2 or 'e' in y2 and 'e' not in y1:
-        min_exp = 0
-        y1, dy1 = round_sf_unc(x, dx1, n, min_exp, max_dec, extra_sf_lim)
-        y2, dy2 = round_sf_unc(x, dx2, n, min_exp, max_dec, extra_sf_lim)
-    num_dec_1 = len(y1.split('e')[0].split('.')[1]) if '.' in y1 else 0
-    num_dec_2 = len(y2.split('e')[0].split('.')[1]) if '.' in y2 else 0
-    if num_dec_2 > num_dec_1:
-        diff = num_dec_2 - num_dec_1
-        y1, dy1 = round_sf_unc(x, dx1, n+diff, min_exp, max_dec, extra_sf_lim)
-        y2, dy2 = round_sf_unc(x, dx2, n, min_exp, max_dec, extra_sf_lim)
+    if y1 == y2 and dy1 == dy2:
+        y = y1
     else:
-        diff = num_dec_1 - num_dec_2
-        off1, off2 = 0, 0
-        if num_dec_1 == 0 == num_dec_2:
-            base_dy1 = '{:e}'.format(dx1).split('e')[0]
-            base_dy2 = '{:e}'.format(dx2).split('e')[0]
-            b1 = float(base_dy1) if np.isfinite(dx1) else 10.
-            b2 = float(base_dy2) if np.isfinite(dx2) else 10.
-            if dx2 > dx1 and b1 <= extra_sf_lim and b2 > extra_sf_lim:
-                off2 = 1
-            if dx1 > dx2 and b2 <= extra_sf_lim and b1 > extra_sf_lim:
-                off1 = 1
-        y1, dy1 = round_sf_unc(x, dx1, n+off1, min_exp, max_dec, extra_sf_lim)
-        y2, dy2 = round_sf_unc(x, dx2, n+diff+off2, min_exp, max_dec, extra_sf_lim)
-    y = y1 if dx2 > dx1 else y2
-    if dy1 != dy2 and (')' in dy1 or ')' in dy2):
-        dy1 = dy1.replace('(', '(-')
-        dy2 = dy2.replace('(', '(+')
-    if ')' in dy1 and ')' not in dy2 or ')' in dy2 and '.' in dy2:
-        _, dy2 = round_sf_unc(x, dx[1], n, min_exp, max_dec-1, extra_sf_lim)
-        dy2 = '(' + dy2[1:-1] + '0' + ')'
-    elif ')' in dy2 and ')' not in dy1 or ')' in dy1 and '.' in dy1:
-        _, dy1 = round_sf_unc(x, dx[0], n, min_exp, max_dec-1, extra_sf_lim)
-        dy1 = '(' + dy1[1:-1] + '0' + ')'
-    if ')' in dy1 or ')' in dy2:
-        if not dy1.startswith('(-'):
-            dy1 = '(-' + dy1[1:]
-        if not dy2.startswith('(+'):
-            dy2 = '(+' + dy2[1:]
+        if 'e' in y1 and 'e' not in y2 or 'e' in y2 and 'e' not in y1:
+            min_exp = 0
+            y1, dy1 = round_sf_unc(x, dx1, n, min_exp, max_dec, extra_sf_lim)
+            y2, dy2 = round_sf_unc(x, dx2, n, min_exp, max_dec, extra_sf_lim)
+        num_dec_1 = len(y1.split('e')[0].split('.')[1]) if '.' in y1 else 0
+        num_dec_2 = len(y2.split('e')[0].split('.')[1]) if '.' in y2 else 0
+        if num_dec_2 > num_dec_1:
+            diff = num_dec_2 - num_dec_1
+            y1, dy1 = round_sf_unc(x, dx1, n+diff, min_exp, max_dec, extra_sf_lim)
+            y2, dy2 = round_sf_unc(x, dx2, n, min_exp, max_dec, extra_sf_lim)
+        else:
+            diff = num_dec_1 - num_dec_2
+            off1, off2 = 0, 0
+            if num_dec_1 == 0 == num_dec_2:
+                base_dy1 = '{:e}'.format(dx1).split('e')[0]
+                base_dy2 = '{:e}'.format(dx2).split('e')[0]
+                b1 = float(base_dy1) if np.isfinite(dx1) else 10.
+                b2 = float(base_dy2) if np.isfinite(dx2) else 10.
+                if dx2 > dx1 and b1 <= extra_sf_lim and b2 > extra_sf_lim:
+                    off2 = 1
+                if dx1 > dx2 and b2 <= extra_sf_lim and b1 > extra_sf_lim:
+                    off1 = 1
+            y1, dy1 = round_sf_unc(x, dx1, n+off1, min_exp, max_dec, extra_sf_lim)
+            y2, dy2 = round_sf_unc(x, dx2, n+diff+off2, min_exp, max_dec, extra_sf_lim)
+        y = y1 if dx2 > dx1 else y2
+        if dy1 != dy2 and (')' in dy1 or ')' in dy2):
+            dy1 = dy1.replace('(', '(-')
+            dy2 = dy2.replace('(', '(+')
+        if ')' in dy1 and ')' not in dy2 or ')' in dy2 and '.' in dy2:
+            _, dy2 = round_sf_unc(x, dx[1], n, min_exp, max_dec-1, extra_sf_lim)
+            dy2 = '(' + dy2[1:-1] + '0' + ')'
+        elif ')' in dy2 and ')' not in dy1 or ')' in dy1 and '.' in dy1:
+            _, dy1 = round_sf_unc(x, dx[0], n, min_exp, max_dec-1, extra_sf_lim)
+            dy1 = '(' + dy1[1:-1] + '0' + ')'
+        if ')' in dy1 or ')' in dy2:
+            if not dy1.startswith('(-'):
+                dy1 = '(-' + dy1[1:]
+            if not dy2.startswith('(+'):
+                dy2 = '(+' + dy2[1:]
     dy = [dy1, dy2]
     return y, dy
 
@@ -627,11 +632,11 @@ class RichValue():
         """Constant value."""
         isconst = self.is_exact and self.domain[0] == self.domain[1]
         return isconst
-    @property    
+    @property
     def center(self):
         """Central value."""
         cent = self.main if self.is_centr else np.nan
-        return cent  
+        return cent
     @property
     def unc_eb(self):
         """Uncertainties with shape (2,1)."""
@@ -658,7 +663,7 @@ class RichValue():
         else:
             s_n = [np.nan]*2
         return s_n
-    @property    
+    @property
     def ampl(self):
         """Amplitudes."""
         m, b = self.main, self.domain
@@ -779,7 +784,7 @@ class RichValue():
                 m = np.nanmedian(distr)
         else:
             m = np.nan
-        return m         
+        return m
     
     def mean(self, num_points=int(1e4), sigmas=8.):
         """Mean of the PDF of the rich value."""
@@ -835,7 +840,7 @@ class RichValue():
             y = self.pdf(x)
             c = np.trapz(y*x, x) if central or standarized else 0.
             s = np.sqrt(np.trapz(y*(x-c)**2)) if standarized else 1.
-            moment = np.trapz((y*(x-c)**n)) / s**n 
+            moment = np.trapz((y*(x-c)**n)) / s**n
         else:
             moment = np.nan
         return moment
@@ -1089,7 +1094,7 @@ class RichValue():
                 else:
                     if is_lolim:
                         symbol = '>'
-                        y = int(np.floor(x)) if is_int else x               
+                        y = int(np.floor(x)) if is_int else x
                     elif is_uplim:
                         symbol = '<'
                         y = int(np.ceil(x)) if is_int else x
@@ -1139,10 +1144,10 @@ class RichValue():
                 else:
                     if is_lolim:
                         symbol = '>'
-                        y = int(np.floor(x)) if is_int else x  
+                        y = int(np.floor(x)) if is_int else x
                     elif is_uplim:
                         symbol = '<'
-                        y = int(np.ceil(x)) if is_int else x  
+                        y = int(np.ceil(x)) if is_int else x
                     y = round_sf(y, n, min_exp, extra_sf_lim)
                     if 'e' in y:
                         y, a = y.split('e')
@@ -1426,7 +1431,7 @@ class RichValue():
         if domain[0] > 0 and other_.sign() != -1:
             domain[0] = 0
         if domain[1] < 0 and other_.sign() != 1:
-            domain[1] = 0    
+            domain[1] = 0
         rvalue = function_with_rich_values('{}%{}', [self, other_],
                                domain=domain, is_domain_cyclic=True)
         return rvalue
@@ -1541,7 +1546,7 @@ class RichValue():
                 x = [x]
             x = np.array(x)
             y = np.zeros(len(x))
-            if self.is_exact:    
+            if self.is_exact:
                 ind = np.argmin(abs(x - main))
                 if hasattr(ind, '__iter__'):
                     ind = ind[0]
@@ -1602,7 +1607,7 @@ class RichValue():
                     if not self.is_lim:
                         distr = general_distribution(main, unc, domain, N)
                     else:
-                        x1, x2 = self.interval()    
+                        x1, x2 = self.interval()
                         distr = loguniform_distribution(x1, x2, N)
                 elif not is_finite_interv and all(np.isinf(unc)):
                     distr = loguniform_distribution(-np.inf, np.inf, N)
@@ -1852,17 +1857,17 @@ class RichArray(np.ndarray):
         return np.array([x.main for x in self.flat]).reshape(self.shape)
     @property
     def uncs(self):
-        return np.array([x.unc for x in self.flat]).reshape([*self.shape,2]) 
+        return np.array([x.unc for x in self.flat]).reshape([*self.shape,2])
     @property
     def are_lolims(self):
         return np.array([x.is_lolim for x in self.flat]).reshape(self.shape)
     @property
     def are_uplims(self):
-        return np.array([x.is_uplim for x in self.flat]).reshape(self.shape) 
+        return np.array([x.is_uplim for x in self.flat]).reshape(self.shape)
     @property
     def are_ranges(self):
         return np.array([x.is_range for x in self.flat]).reshape(self.shape)
-    @property 
+    @property
     def domains(self):
         return np.array([x.domain for x in self.flat]).reshape([*self.shape,2])
     @property
@@ -1903,7 +1908,7 @@ class RichArray(np.ndarray):
         return np.array([x.is_inf for x in self.flat]).reshape(self.shape)
     @property
     def centers(self):
-        return np.array([x.center for x in self.flat]).reshape(self.shape) 
+        return np.array([x.center for x in self.flat]).reshape(self.shape)
     @property
     def rel_uncs(self):
         return (np.array([x.rel_unc for x in self.flat])
@@ -1977,27 +1982,27 @@ class RichArray(np.ndarray):
     
     def medians(self, num_points=None):
         return np.array([x.median(num_points)
-                         for x in self.flat]).reshape(self.shape) 
+                         for x in self.flat]).reshape(self.shape)
 
     def means(self, num_points=int(1e4), sigmas=8.):
         return np.array([x.mean(num_points, sigmas)
-                         for x in self.flat]).reshape(self.shape) 
+                         for x in self.flat]).reshape(self.shape)
 
     def modes(self, num_points=int(1e4), sigmas=8.):
         return np.array([x.mode(num_points, sigmas)
-                         for x in self.flat]).reshape(self.shape) 
+                         for x in self.flat]).reshape(self.shape)
 
     def variances(self, num_points=int(1e4), sigmas=8.):
         return np.array([x.var(num_points, sigmas)
-                         for x in self.flat]).reshape(self.shape) 
+                         for x in self.flat]).reshape(self.shape)
 
     def stds(self, num_points=int(1e4), sigmas=8.):
         return np.array([x.std(num_points, sigmas)
-                         for x in self.flat]).reshape(self.shape) 
+                         for x in self.flat]).reshape(self.shape)
     
     def moments(self, n, central=True, standarized=False):
         return np.array([x.moments(n, central, standarized)
-                                   for x in self.flat]).reshape(self.shape) 
+                                   for x in self.flat]).reshape(self.shape)
     
     def set_params(self, params):
         """Set the rich value parameters of each entry of the rich array."""
@@ -2006,7 +2011,7 @@ class RichArray(np.ndarray):
                          'minimum exponent for scientific notation': 'min_exp',
                          'maximum number of decimals': 'max_dec',
                          'limit for extra significant figure': 'extra_sf_lim'}
-        attributes = ['domain'] + list(abbreviations.values()) 
+        attributes = ['domain'] + list(abbreviations.values())
         for entry in abbreviations:
             name = abbreviations[entry]
             if entry in params:
@@ -2158,7 +2163,7 @@ class RichDataFrame(pd.DataFrame):
         exec(code, {**{'self': self}, **globals()}, output)
         return output['df']
 
-    @property    
+    @property
     def mains(self): return self._property('mains')
     @property
     def uncs(self): return self._property2('uncs')
@@ -2590,7 +2595,7 @@ class ComplexRichValue():
         Parameters
         ----------
         real : rich value
-            Real part of the complex rich value. 
+            Real part of the complex rich value.
         imag : rich value
             Imaginary part of the complex rich value
         """
@@ -2671,14 +2676,14 @@ class ComplexRichValue():
         self.imag.num_sf = x
         
     @property
-    def min_exp(self): return round(np.mean([self.real.min_exp, self.imag.min_exp]))  
+    def min_exp(self): return round(np.mean([self.real.min_exp, self.imag.min_exp]))
     @min_exp.setter
     def min_exp(self, x):
         self.real.min_exp = x
         self.imag.min_exp = x
         
     @property
-    def max_dec(self): return min(self.real.max_dec, self.imag.max_dec)  
+    def max_dec(self): return min(self.real.max_dec, self.imag.max_dec)
     @max_dec.setter
     def max_dec(self, x):
         self.real.max_dec = x
@@ -2718,7 +2723,7 @@ class ComplexRichValue():
     def main(self):
         """Main value."""
         x = self.real.main + 1j*self.imag.main
-        return x 
+        return x
 
     @property
     def unc(self):
@@ -2938,7 +2943,7 @@ class ComplexRichValue():
         """Apply a function to the rich value"""
         return function_with_rich_values(function, self, **kwargs)
     
-    # Instance variable acronyms.  
+    # Instance variable acronyms.
 
     @property
     def real_part(self): return self.real
@@ -3282,7 +3287,7 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
         domain = read_domain(text)
         if domain is not None:
             text = text.split('[')[0][:-1]
-        if not '--' in text:    
+        if not '--' in text:
             if text.startswith('+'):
                 text = text[1:]
             if 'e' in text:
@@ -3334,8 +3339,10 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
                         dx1 = dx1[1:]
                         dx2 = dx2[1:]
                     d = len(x.split('.')[1]) if '.' in x else 0
-                    dx1 = '{:f}'.format(float(dx1)*10**(-d))
-                    dx2 = '{:f}'.format(float(dx2)*10**(-d))
+                    d1 = len(dx1.split('.')[1]) if '.' in dx1 else 0
+                    d2 = len(dx1.split('.')[1]) if '.' in dx2 else 0
+                    dx1 = '{:f}'.format(float(dx1)*10**(-(d-d1)))
+                    dx2 = '{:f}'.format(float(dx2)*10**(-(d-d2)))
                 elif '+/-' in text:
                     x, dx = x_dx.split('+/-')
                     text = '{}-{}+{} {}'.format(x, dx, dx, e)
@@ -3390,11 +3397,11 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
                 if eval(dx1) == eval(dx2) == 0:
                     extra_sf_lim = 1 - 1e-8
                 else:
-                    extra_sf_lim = default_extra_sf_lim 
+                    extra_sf_lim = default_extra_sf_lim
                     base = float('{:e}'.format(eval(val)).split('e')[0])
                     if base <= default_extra_sf_lim:
                         if num_sf < default_num_sf + 1:
-                            extra_sf_lim = base - 1e-8        
+                            extra_sf_lim = base - 1e-8
             else:
                 extra_sf_lim = default_extra_sf_lim
             x = x.replace('e0','')
@@ -3402,7 +3409,7 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
             unc = [eval(dx1), eval(dx2)]
             is_range = False
             if domain is None and np.isfinite(main) and unc[0] == 0. == unc[1]:
-                domain = [main]*2          
+                domain = [main]*2
         else:
             text = text.replace(' --','--').replace('-- ','--')
             text1, text2 = text.split('--')
@@ -3449,7 +3456,7 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
                 imag = rich_value(text_imag, *args)
             else:
                 text = text.replace(' + ', '+').replace(' - ', '-')
-                val = complex(text) 
+                val = complex(text)
                 real = val.real
                 imag = val.imag
             rvalue = ComplexRichValue(real, imag, domain, is_int)
@@ -4166,7 +4173,7 @@ def loguniform_distribution(low=-1, high=1, size=1,
             log_x2 = _log10(abs(x2))
         if log_x1 < zero_log:
             log_x1 = zero_log
-        if log_x2 > inf_log: 
+        if log_x2 > inf_log:
             log_x2 = inf_log
         if x1 < 0:
             if x2 <= 0:
@@ -4308,7 +4315,7 @@ def add_zero_infs(interval, zero_log, inf_log):
     elif x2 > 0 and x2 > 10**inf_log:
         x2 = np.inf
     new_interval = [x1, x2]
-    return new_interval 
+    return new_interval
 def remove_zero_infs(interval, zero_log, inf_log):
     """Replace 0 and infinity for the given values in the input interval."""
     x1, x2 = interval
@@ -5420,7 +5427,7 @@ def curve_fit(x, y, function, guess, num_samples=3000,
         lim1, lim2 = 0.2, 1.2
         if disp_coef <= lim1:
             frac1 = 1.
-        elif disp_coef < lim2: 
+        elif disp_coef < lim2:
             frac1 = 1. - disp_coef / (lim2 - lim1)
         else:
             frac1 = 0.
@@ -5433,7 +5440,7 @@ def curve_fit(x, y, function, guess, num_samples=3000,
     result = {'parameters': params_fit, 'dispersion': dispersion, 'loss': loss,
               'parameters samples': samples, 'dispersion sample': dispersions,
               'loss sample': losses, 'number of fails': num_fails}
-    return result   
+    return result
 
 def point_fit(y, function, guess, num_samples=3000,
               loss=lambda a,b: (a-b)**2, lim_loss_factor=4.,
@@ -5510,7 +5517,7 @@ def point_fit(y, function, guess, num_samples=3000,
         lim1, lim2 = 0.2, 1.2
         if disp_coef <= lim1:
             frac1 = 1.
-        elif disp_coef < lim2: 
+        elif disp_coef < lim2:
             frac1 = 1. - disp_coef / (lim2 - lim1)
         else:
             frac1 = 0.
