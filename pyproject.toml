@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "richvalues"
-version = "4.2.1"
+version = "4.2.4"
 description = "Python library for working with uncertainties and upper/lower limits"
 license = {file="LICENSE"}
 authors = [{name="Andrés Megías Toledano"}]
-readme = "description.md"
+readme = "README.md"
 dependencies = ["numpy", "pandas", "scipy", "matplotlib"]
 classifiers = ["Programming Language :: Python :: 3",
                "License :: OSI Approved :: BSD License",
