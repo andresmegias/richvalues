@@ -37,7 +37,7 @@ IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 """
 
-__version__ = '4.2.5'
+__version__ = '4.2.7'
 __author__ = 'Andrés Megías Toledano'
 
 import copy
@@ -59,7 +59,7 @@ defaultparams = {
     'size of samples': int(8e3),
     'number of significant figures': 1,
     'minimum exponent for scientific notation': 4,
-    'maximum number of decimals': 5,
+    'maximum number of decimals to use parenthesis': 5,
     'limit for extra significant figure': 2.5,
     'use extra significant figure for exact values': True,
     'use extra significant figure for finite intervals': True,
@@ -211,7 +211,7 @@ def round_sf_unc(x, dx, n=None, min_exp=None, max_dec=None, extra_sf_lim=None):
     """
     n = set_default_value(n, 'number of significant figures')
     min_exp = set_default_value(min_exp, 'minimum exponent for scientific notation')
-    max_dec = set_default_value(max_dec, 'maximum number of decimals')
+    max_dec = set_default_value(max_dec, 'maximum number of decimals to use parenthesis')
     extra_sf_lim = set_default_value(extra_sf_lim, 'limit for extra significant figure')
     use_exp = True
     if ((float(x) > float(dx)
@@ -307,19 +307,26 @@ def round_sf_unc(x, dx, n=None, min_exp=None, max_dec=None, extra_sf_lim=None):
     d = len(y.split('e')[0].split('.')[-1]) if '.' in y else 0
     if max_dec == 0 or d > max_dec and ')' not in dy:
         if 'e' in y:
-            y, exp = y.split('e')
+            y, exp_y = y.split('e')
             dy, _ = dy.split('e')
         else:
-            exp = None
-        d = len(y.split('.')[-1]) if '.' in y else 0
-        d_ = len(dy.split('.')[-1]) if '.' in dy else 0
-        dy_ = round_sf(float(dy)*10**(d-d_), n, 0, extra_sf_lim)
-        dy, exp_ = dy_.split('e')
-        if int(exp_) > 0:
-            dy = round_sf(float(dy)*10**int(exp_), n, np.inf, extra_sf_lim)
-        dy = '(' + dy + ')'
-        if exp is not None:
-            y = '{}e{}'.format(y, exp)
+            exp_y = None
+        if dy != '0':
+            d = len(y.split('.')[-1]) if '.' in y else 0
+            d_ = len(dy.split('.')[-1]) if '.' in dy else 0
+            dy_ = round_sf(float(dy)*10**(d-d_), n, 0, extra_sf_lim)
+            dy = dy_.split('e')[0]
+            exp_dy = dy_.split('e')[1] if 'e' in dy_ else 0
+            exp_y_ = 0 if exp_y is None else exp_y
+            if int(exp_y_) > int(exp_dy):
+                dy = round_sf(float(dy)*10**int(exp_dy), n, np.inf, extra_sf_lim)
+                if '.' in dy:
+                    dy = dy.split('.')[-1]
+            dy = '(' + dy + ')'
+        else:
+            dy = ''
+        if exp_y is not None:
+            y = '{}e{}'.format(y, exp_y)
     return y, dy
 
 def round_sf_uncs(x, dx, n=None, min_exp=None, max_dec=None, extra_sf_lim=None):
@@ -354,7 +361,7 @@ def round_sf_uncs(x, dx, n=None, min_exp=None, max_dec=None, extra_sf_lim=None):
     """
     n = set_default_value(n, 'number of significant figures')
     min_exp = set_default_value(min_exp, 'minimum exponent for scientific notation')
-    max_dec = set_default_value(max_dec, 'maximum number of decimals')
+    max_dec = set_default_value(max_dec, 'maximum number of decimals to use parenthesis')
     extra_sf_lim = set_default_value(extra_sf_lim, 'limit for extra significant figure')
     dx1, dx2 = dx
     y1, dy1 = round_sf_unc(x, dx1, n, min_exp, max_dec, extra_sf_lim)
@@ -583,7 +590,7 @@ class RichValue():
         self.domain = domain
         self.num_sf = defaultparams['number of significant figures']
         self.min_exp = defaultparams['minimum exponent for scientific notation']
-        self.max_dec = defaultparams['maximum number of decimals']
+        self.max_dec = defaultparams['maximum number of decimals to use parenthesis']
         self.extra_sf_lim = defaultparams['limit for extra significant figure']
         self.pdf_info = 'default'
         self.variables = variables
@@ -922,6 +929,8 @@ class RichValue():
                     dy2, _ = dy2.split('e')
                 if ')' not in dy1:
                     if dy1 == dy2:
+                        if dy1 == '':
+                            dy1 = dy2 = '0'
                         if float(dy1) != 0:
                             text = '{}+/-{} e{}'.format(y, dy1, a)
                         else:
@@ -1218,6 +1227,7 @@ class RichValue():
         rvalue = RichValue(x, dx, domain=domain, is_int=self.is_int)
         rvalue.num_sf = self.num_sf
         rvalue.min_exp = self.min_exp
+        rvalue.max_dec = self.max_dec
         rvalue.extra_sf_lim = self.extra_sf_lim
         rvalue.variables = self.variables
         expression = self.expression
@@ -1256,6 +1266,7 @@ class RichValue():
         rvalue.domain[0] = max(0, rvalue.domain[0])
         rvalue.num_sf = self.num_sf
         rvalue.min_exp = self.min_exp
+        rvalue.max_dec = self.max_dec
         rvalue.extra_sf_lim = self.extra_sf_lim
         rvalue.variables = self.variables
         rvalue.expression = 'abs({})'.format(self.expression)
@@ -1501,6 +1512,7 @@ class RichValue():
                 rvalue = RichValue(np.nan)
             rvalue.num_sf = self.num_sf
             rvalue.min_exp = self.min_exp
+            rvalue.max_dec = self.max_dec
             rvalue.extra_sf_lim = self.extra_sf_lim
         else:
             vars_str = ','.join(variables)
@@ -2012,7 +2024,7 @@ class RichArray(np.ndarray):
         abbreviations = {'is integer': 'is_int',
                          'number of significant figures': 'num_sf',
                          'minimum exponent for scientific notation': 'min_exp',
-                         'maximum number of decimals': 'max_dec',
+                         'maximum number of decimals to use parenthesis': 'max_dec',
                          'limit for extra significant figure': 'extra_sf_lim'}
         attributes = ['domain'] + list(abbreviations.values()) 
         for entry in abbreviations:
@@ -2250,7 +2262,7 @@ class RichDataFrame(pd.DataFrame):
         abbreviations = {'is integer': 'is_int',
                          'number of significant figures': 'num_sf',
                          'minimum exponent for scientific notation': 'min_exp',
-                         'maximum number of decimals': 'max_dec',
+                         'maximum number of decimals to use parenthesis': 'max_dec',
                          'limit for extra significant figure': 'extra_sf_lim'}
         attributes = ['domain'] + list(abbreviations.values())
         for entry in abbreviations:
@@ -2991,6 +3003,7 @@ def add_rich_values(x, y):
     """Sum two rich values to get a new one."""
     num_sf = min(x.num_sf, y.num_sf)
     min_exp = round(np.mean([x.min_exp, y.min_exp]))
+    max_dec = round(np.mean([x.max_dec, y.max_dec]))
     extra_sf_lim = max(x.extra_sf_lim, y.extra_sf_lim)
     is_int = x.is_int and y.is_int
     domain = [x.domain[0] + y.domain[0], x.domain[1] + y.domain[1]]
@@ -3008,6 +3021,7 @@ def add_rich_values(x, y):
                                       is_vectorizable=True)
     z.num_sf = num_sf
     z.min_exp = min_exp
+    z.max_dec = max_dec
     z.extra_sf_lim = extra_sf_lim
     return z
 
@@ -3015,6 +3029,7 @@ def multiply_rich_values(x, y):
     """Multiply two rich values to get a new one."""
     num_sf = min(x.num_sf, y.num_sf)
     min_exp = round(np.mean([x.min_exp, y.min_exp]))
+    max_dec = round(np.mean([x.max_dec, y.max_dec]))
     extra_sf_lim = max(x.extra_sf_lim, y.extra_sf_lim)
     is_int = x.is_int and y.is_int
     domain = propagate_domain(x.domain, y.domain, lambda a,b: a*b)
@@ -3033,6 +3048,7 @@ def multiply_rich_values(x, y):
                                       is_vectorizable=True)
     z.num_sf = num_sf
     z.min_exp = min_exp
+    z.max_dec = max_dec
     z.extra_sf_lim = extra_sf_lim
     return z
 
@@ -3040,6 +3056,7 @@ def divide_rich_values(x, y):
     """Divide two rich values to get a new one."""
     num_sf = min(x.num_sf, y.num_sf)
     min_exp = round(np.mean([x.min_exp, y.min_exp]))
+    max_dec = round(np.mean([x.max_dec, y.max_dec]))
     extra_sf_lim = max(x.extra_sf_lim, y.extra_sf_lim)
     is_int = x.is_int and y.is_int
     domain = propagate_domain(x.domain, y.domain, lambda a,b: a/b)
@@ -3081,6 +3098,7 @@ def divide_rich_values(x, y):
                                       is_vectorizable=True, sigmas=sigmas)
     z.num_sf = num_sf
     z.min_exp = min_exp
+    z.max_dec = max_dec
     z.extra_sf_lim = extra_sf_lim
     return z
 
@@ -3214,7 +3232,8 @@ def less_equiv(x, y, sigmas_interval=None, sigmas_overlap=None):
     return output
 
 def rich_value(text=None, domain=None, is_int=None, pdf=None,
-               consider_intervs=True, use_default_extra_sf_lim=False):
+               consider_intervs=True, use_default_max_dec=False,
+               use_default_extra_sf_lim=False):
     """
     Convert the input text to a rich value.
 
@@ -3236,6 +3255,10 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
         If the PDF is given, this variable determines if we consider the
         possibility that the rich value is an upper/lower limit or a finite
         interval of values. By default, it is True.
+    use_default_max_dec : bool, optional
+        If True, the default maximum number of decimals to show uncertainties
+        between parenthesis will be used instead of inferring it from the input
+        text. This will reduce the computation time a little bit.
     use_default_extra_sf_lim : bool, optional
         If True, the default limit for extra significant figure will be used
         instead of inferring it from the input text. This will reduce the
@@ -3261,6 +3284,7 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
 
     input_domain = copy.copy(domain)
     default_num_sf = defaultparams['number of significant figures']
+    default_max_dec = defaultparams['maximum number of decimals to use parenthesis']
     default_extra_sf_lim = defaultparams['limit for extra significant figure']
     abbreviations = {'inf': 'np.inf', 'tau': 'math.tau', 'pi': 'np.pi',
                      'nan': 'np.nan', 'NaN': 'np.nan', 'none': 'np.nan'}
@@ -3344,8 +3368,8 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
                     d = len(x.split('.')[1]) if '.' in x else 0
                     d1 = len(dx1.split('.')[1]) if '.' in dx1 else 0
                     d2 = len(dx1.split('.')[1]) if '.' in dx2 else 0
-                    dx1 = '{:f}'.format(float(dx1)*10**(-(d-d1)))
-                    dx2 = '{:f}'.format(float(dx2)*10**(-(d-d2)))
+                    dx1 = str(float(dx1)*10**(-(d-d1)))
+                    dx2 = str(float(dx2)*10**(-(d-d2)))
                 elif '+/-' in text:
                     x, dx = x_dx.split('+/-')
                     text = '{}-{}+{} {}'.format(x, dx, dx, e)
@@ -3373,6 +3397,11 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
             x = parse_value(x)
             dx1 = parse_value(dx1)
             dx2 = parse_value(dx2)
+            if not use_default_max_dec:
+                num_dec = len(x.split('.')[1].split('e')[0]) if '.' in x else 0
+                max_dec = num_dec - 1
+            else:
+                max_dec = default_max_dec
             if not use_default_extra_sf_lim:
                 if (not (is_lolim or is_uplim)
                         and not (eval(dx1) == eval(dx2) == 0)):
@@ -3404,7 +3433,7 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
                     base = float('{:e}'.format(eval(val)).split('e')[0])
                     if base <= default_extra_sf_lim:
                         if num_sf < default_num_sf + 1:
-                            extra_sf_lim = base - 1e-8        
+                            extra_sf_lim = base - 1e-8    
             else:
                 extra_sf_lim = default_extra_sf_lim
             x = x.replace('e0','')
@@ -3416,27 +3445,29 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
         else:
             text = text.replace(' --','--').replace('-- ','--')
             text1, text2 = text.split('--')
-            x1, _, _, _, _, _, me1, el1 = parse_as_rich_value(text1)
-            x2, _, _, _, _, _, me2, el2 = parse_as_rich_value(text2)
+            x1, _, _, _, _, _, me1, md1, el1 = parse_as_rich_value(text1)
+            x2, _, _, _, _, _, me2, md2, el2 = parse_as_rich_value(text2)
             main = [x1, x2]
             unc = 0
             is_lolim, is_uplim, is_range = False, False, True
             min_exp = round(np.mean([me1, me2]))
+            max_dec = round(np.mean([md1, md2]))
             extra_sf_lim = max(el1, el2)
         return (main, unc, is_lolim, is_uplim, is_range, domain,
-                min_exp, extra_sf_lim)
+                min_exp, max_dec, extra_sf_lim)
     
     if pdf is None:
         text = str(text)
         is_complex = 'j' in text
         if not is_complex:
-            (main, unc, is_lolim, is_uplim, is_range, domain,
-                         min_exp, extra_sf_lim) = parse_as_rich_value(text)
+            (main, unc, is_lolim, is_uplim, is_range, domain, min_exp,
+                         max_dec, extra_sf_lim) = parse_as_rich_value(text)
             if input_domain is not None:
                 domain = input_domain
             rvalue = RichValue(main, unc, is_lolim, is_uplim,
                                is_range, domain, is_int)
             rvalue.min_exp = min_exp
+            rvalue.max_dec = max_dec
             rvalue.extra_sf_lim = extra_sf_lim
         else:
             if '+/-' in text or '-' in text[1:] and '+' in text[1:]:
@@ -3454,7 +3485,8 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
                     text_imag = text_imag[1:]
                 if text_imag[-1] == ')':
                     text_imag = text_imag[:-1]
-                args = (domain, is_int, pdf, use_default_extra_sf_lim)
+                args = (domain, is_int, pdf,
+                        use_default_max_dec, use_default_extra_sf_lim)
                 real = rich_value(text_real, *args)
                 imag = rich_value(text_imag, *args)
             else:
@@ -4785,6 +4817,7 @@ def function_with_rich_values(function, args, unc_function=None,
         len_samples = int(len(args)**0.5 * defaultparams['size of samples'])
     num_sf = int(np.median([arg.num_sf for arg in args]))
     min_exp = round(np.mean([arg.min_exp for arg in args]))
+    max_dec = round(np.mean([arg.max_dec for arg in args]))
     extra_sf_lim = max([arg.extra_sf_lim for arg in args])
     
     if consider_intervs is None:
@@ -4922,6 +4955,7 @@ def function_with_rich_values(function, args, unc_function=None,
                 rval_k = ComplexRichValue(real_k, imag_k)
             rval_k.num_sf = num_sf
             rval_k.min_exp = min_exp
+            rval_k.max_dec = max_dec
             rval_k.extra_sf_lim = extra_sf_lim
             output += [rval_k]
             
@@ -4949,6 +4983,7 @@ def function_with_rich_values(function, args, unc_function=None,
                           num_reps_lims, save_pdf)
             rval_k.num_sf = num_sf
             rval_k.min_exp = min_exp
+            rval_k.max_dec = max_dec
             rval_k.extra_sf_lim = extra_sf_lim
             if type(input_function) is str:
                 if type(rval_k) is RichValue:
