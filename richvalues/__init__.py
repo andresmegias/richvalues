@@ -37,7 +37,7 @@ IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 """
 
-__version__ = '4.2.7'
+__version__ = '4.2.9'
 __author__ = 'Andrés Megías Toledano'
 
 import copy
@@ -299,9 +299,11 @@ def round_sf_unc(x, dx, n=None, min_exp=None, max_dec=None, extra_sf_lim=None):
                 y = '{:e}'.format(float(y))
             exp = int(y.split('e')[1]) if 'e' in y else 0
             if abs(exp) < min_exp:
+                use_exp = False
                 x = float(sign + str(x))
                 min_exp = np.inf
                 y, dy = round_sf_unc(x, dx, n, min_exp, max_dec, extra_sf_lim)
+                return y, dy
         y = y.replace('e+', 'e').replace('e00', 'e0')
         dy = dy.replace('e+','e').replace('e00', 'e0') .replace('(', '').replace(')', '')
     d = len(y.split('e')[0].split('.')[-1]) if '.' in y else 0
@@ -322,6 +324,8 @@ def round_sf_unc(x, dx, n=None, min_exp=None, max_dec=None, extra_sf_lim=None):
                 dy = round_sf(float(dy)*10**int(exp_dy), n, np.inf, extra_sf_lim)
                 if '.' in dy:
                     dy = dy.split('.')[-1]
+                    while dy.startswith('0'):
+                        dy = dy[1:]
             dy = '(' + dy + ')'
         else:
             dy = ''
@@ -394,20 +398,12 @@ def round_sf_uncs(x, dx, n=None, min_exp=None, max_dec=None, extra_sf_lim=None):
             y1, dy1 = round_sf_unc(x, dx1, n+off1, min_exp, max_dec, extra_sf_lim)
             y2, dy2 = round_sf_unc(x, dx2, n+diff+off2, min_exp, max_dec, extra_sf_lim)
         y = y1 if dx2 > dx1 else y2
-        if dy1 != dy2 and (')' in dy1 or ')' in dy2):
-            dy1 = dy1.replace('(', '(-')
-            dy2 = dy2.replace('(', '(+')
         if ')' in dy1 and ')' not in dy2 or ')' in dy2 and '.' in dy2:
             _, dy2 = round_sf_unc(x, dx[1], n, min_exp, max_dec-1, extra_sf_lim)
             dy2 = '(' + dy2[1:-1] + '0' + ')'
         elif ')' in dy2 and ')' not in dy1 or ')' in dy1 and '.' in dy1:
             _, dy1 = round_sf_unc(x, dx[0], n, min_exp, max_dec-1, extra_sf_lim)
             dy1 = '(' + dy1[1:-1] + '0' + ')'
-        if ')' in dy1 or ')' in dy2:
-            if not dy1.startswith('(-'):
-                dy1 = '(-' + dy1[1:]
-            if not dy2.startswith('(+'):
-                dy2 = '(+' + dy2[1:]
     dy = [dy1, dy2]
     return y, dy
 
@@ -939,8 +935,6 @@ class RichValue():
                     else:
                         text = '{}-{}+{} e{}'.format(y, dy1, dy2, a)
                 else:
-                    dy1 = dy1.replace('(-', '(')
-                    dy2 = dy2.replace('(+', '(')
                     if dy1 == dy2:
                         text = '{}{} e{}'.format(y, dy1, a)
                     else:
@@ -1099,7 +1093,7 @@ class RichValue():
                         else:
                             y, dy = round_sf_unc(x, dx[0], n, min_exp,
                                                  max_dec, extra_sf_lim)
-                            text = '${} \pm {}$'.format(y, dy)
+                            text = '${} \\pm {}$'.format(y, dy)
                     else:
                         y, dy = round_sf_uncs(x, dx, n, min_exp, max_dec, extra_sf_lim)
                         text = '$'+y + '_{-'+dy[0]+'}^{+'+dy[1]+'}$'
@@ -1134,25 +1128,38 @@ class RichValue():
                                                  max_dec, extra_sf_lim)
                             if 'e' in y:
                                 y, a = y.split('e')
-                                dy, a = dy.split('e')
+                                if 'e' in dy:
+                                    dy, a = dy.split('e') 
+                                else:
+                                    a = 0
                             else:
                                 a = 0
                             a = str(int(a))
-                            text = ('$({} \pm {}) '.format(y, dy)
-                                     + mult_symbol + ' 10^{'+a+'}$')
+                            if '(' in dy:
+                                text = ('$({}{}) '.format(y, dy)
+                                         + mult_symbol + ' 10^{'+a+'}$')
+                            else:
+                                text = ('$({} \\pm {}) '.format(y, dy)
+                                         + mult_symbol + ' 10^{'+a+'}$')
                     else:
                         y, dy = round_sf_uncs(x, [dx[0], dx[1]], n, min_exp,
                                               max_dec, extra_sf_lim)
                         if 'e' in y:
                             y, a = y.split('e')
-                            dy1, a = dy[0].split('e')
-                            dy2, a = dy[1].split('e')
+                            dy1, a = (dy[0].split('e') if 'e' in dy[0]
+                                      else (dy[0], 0))
+                            dy2, a = (dy[1].split('e') if 'e' in dy[1]
+                                      else (dy[1], 0))
                         else:
                             dy1, dy2 = dy
                             a = 0
                         a = str(int(a))
-                        text = ('$'+y + '_{-'+dy1+'}^{+'+dy2+'} '
-                                + mult_symbol + ' 10^{'+a+'}' + '$')
+                        if '(' in dy1:
+                            text = ('$' + y + dy1 + dy2 + ' '
+                                    + mult_symbol + ' 10^{'+a+'}' + '$')
+                        else:
+                            text = ('$' + y + '_{-'+dy1+'}^{+'+dy2+'} '
+                                    + mult_symbol + ' 10^{'+a+'}' + '$')
                 else:
                     if is_lolim:
                         symbol = '>'
@@ -1192,15 +1199,15 @@ class RichValue():
                 text = '{} -- {}'.format(x1.latex(*kwargs), x2.latex(*kwargs))
         else:
             text = (str(main).replace('NaN','nan').replace('nan','...')
-                    .replace('inf','$\infty$'))
+                    .replace('inf','$\\infty$'))
         if show_domain and domain[0] != domain[1]:
             d1, d2 = domain[0], domain[1]
             if np.isinf(d1):
-                d1 = '\infty'
+                d1 = '\\infty'
             elif round(d1) != d1:
                 d1 = round_sf(d1, n=2)
             if np.isinf(d2):
-                d2 = '\infty'
+                d2 = '\\infty'
             elif round(d2) != d2:
                 d2 = round_sf(d2, n=2)
             domain = ' $[{},\\,{}]$'.format(d1, d2)
@@ -3256,9 +3263,10 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
         possibility that the rich value is an upper/lower limit or a finite
         interval of values. By default, it is True.
     use_default_max_dec : bool, optional
-        If True, the default maximum number of decimals to show uncertainties
-        between parenthesis will be used instead of inferring it from the input
-        text. This will reduce the computation time a little bit.
+        If True and there is a rich value with the uncertainty written between
+        parenthesis, the default maximum number of decimals to show
+        uncertainties between parenthesis will be used instead of inferring it
+        from the input text.
     use_default_extra_sf_lim : bool, optional
         If True, the default limit for extra significant figure will be used
         instead of inferring it from the input text. This will reduce the
@@ -3397,9 +3405,9 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
             x = parse_value(x)
             dx1 = parse_value(dx1)
             dx2 = parse_value(dx2)
-            if not use_default_max_dec:
-                num_dec = len(x.split('.')[1].split('e')[0]) if '.' in x else 0
-                max_dec = num_dec - 1
+            if '(' in dx1 and not use_default_max_dec:
+                    num_dec = len(x.split('.')[1].split('e')[0]) if '.' in x else 0
+                    max_dec = num_dec - 1
             else:
                 max_dec = default_max_dec
             if not use_default_extra_sf_lim:
@@ -3520,7 +3528,7 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
         
     return rvalue
 
-def rich_array(array, domain=None, is_int=None,
+def rich_array(array, domain=None, is_int=None, use_default_max_dec=False,
                use_default_extra_sf_lim=False):
     """
     Convert the input array to a rich array.
@@ -3537,6 +3545,11 @@ def rich_array(array, domain=None, is_int=None,
     is_int : bool, optional
         If True, the variable corresponding to the rich array will be an
         integer, so when creating samples it will have integer values.
+    use_default_max_dec : bool, optional
+        If True and there is a rich value with the uncertainty written between
+        parenthesis, the default maximum number of decimals to use the notation
+        with parenthesis will be used instead of inferring it from the input
+        text.
     use_default_extra_sf_lim : bool, optional
         If True, the default limit for extra significant figure will be used
         instead of inferring it from the input text. This will reduce the
@@ -3561,7 +3574,9 @@ def rich_array(array, domain=None, is_int=None,
                 entry.is_int = is_int
             pdf_info = entry.pdf_info
         else:
-            entry = rich_value(entry, domain, is_int, use_default_extra_sf_lim)
+            entry = rich_value(entry, domain, is_int,
+                               use_default_max_dec=use_default_max_dec,
+                               use_default_extra_sf_lim=use_default_extra_sf_lim)
             pdf_info = 'default'
         mains += [entry.main]
         uncs += [entry.unc]
@@ -3596,7 +3611,7 @@ def rich_array(array, domain=None, is_int=None,
     return rarray
 
 def rich_dataframe(df, domains=None, are_ints=None, ignore_columns=[],
-                   use_default_extra_sf_lim=False, **kwargs):
+          use_default_max_dec=False, use_default_extra_sf_lim=False, **kwargs):
     """
     Convert the values of the input dataframe of text strings to rich values.
 
@@ -3621,6 +3636,11 @@ def rich_dataframe(df, domains=None, are_ints=None, ignore_columns=[],
         [-np.inf, np.inf].
     ignore_columns : list, optional
         List of columns to be preserved as the original type.
+    use_default_max_dec : bool, optional
+        If True and there is a rich value with the uncertainty written between
+        parenthesis, the default maximum number of decimals to use the notation
+        with parenthesis will be used instead of inferring it from the input
+        text.
     use_default_extra_sf_lim : bool, optional
         If True, the default limit for extra significant figure will be used
         instead of inferring it from the input text. This will reduce the
@@ -3638,7 +3658,7 @@ def rich_dataframe(df, domains=None, are_ints=None, ignore_columns=[],
         domains = {col: domains for col in df}
     if type(are_ints) is not dict:
         are_ints = {col: are_ints for col in df}
-    df = copy.copy(df)
+    df = copy.copy(df).astype(object)
     for (i,row) in df.iterrows():
         for col in df:
             entry = df.at[i,col]
@@ -3666,7 +3686,9 @@ def rich_dataframe(df, domains=None, are_ints=None, ignore_columns=[],
                     if is_int is None:
                         is_int = defaultparams['assume integers']
                     try:
-                        entry = rich_value(text, domain, is_int, use_default_extra_sf_lim)
+                        entry = rich_value(text, domain, is_int,
+                                    use_default_max_dec=use_default_max_dec,
+                                    use_default_extra_sf_lim=use_default_extra_sf_lim)
                     except:
                         entry = text
             if is_rich_value or is_number:
@@ -5245,7 +5267,7 @@ def errorbar(x, y, lims_factor=None, **kwargs):
     def lim_factor(x):
         xc = np.sort(x.mains)
         xc = xc[np.isfinite(xc)]
-        if len(xc) > 0:
+        if len(xc) > 1:
             with np.errstate(divide='ignore', invalid='ignore'):
                 try:
                     r = abs(scipy.stats.linregress(xc, np.arange(len(xc))).rvalue)
