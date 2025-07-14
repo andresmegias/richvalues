@@ -37,7 +37,7 @@ IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 """
 
-__version__ = '4.2.9'
+__version__ = '4.2.12'
 __author__ = 'Andrés Megías Toledano'
 
 import copy
@@ -90,7 +90,7 @@ def set_default_params(new_params_dict):
         if param in original_defaultparams:
             defaultparams[param] = new_params_dict[param]
         else:
-            print("Warning: Parameter '{}' does not exist. ".format(param)
+            print(f"Warning: Parameter '{param}' does not exist. "
                   + "Check the variable 'original_defaultparams' to see the"
                   + " parameter names ('richvalues.original_defaultparams').")
 
@@ -147,10 +147,10 @@ def round_sf(x, n=None, min_exp=None, extra_sf_lim=None):
         use_exp = False
     sign = '-' if x < 0 else ''
     x = abs(x)
-    base = '{:e}'.format(x).split('e')[0]
+    base = f'{x:e}'.split('e')[0]
     m = n+1 if round(float(base), n) <= extra_sf_lim else n
-    y = str(float('{:.{}g}'.format(x, m)))
-    base = '{:e}'.format(float(y)).split('e')[0]
+    y = str(float(f'{x:.{m}g}'))
+    base = f'{float(y):e}'.split('e')[0]
     if round(float(base), n) <= extra_sf_lim:
         n += 1
     integers = len(y.split('.')[0])
@@ -217,8 +217,7 @@ def round_sf_unc(x, dx, n=None, min_exp=None, max_dec=None, extra_sf_lim=None):
     if ((float(x) > float(dx)
           and all(abs(np.floor(_log10(abs(np.array([x, dx]))))) < min_exp))
           or (float(x) <= float(dx)
-              and float('{:e}'.format(float(dx))
-                        .split('e')[0]) > extra_sf_lim
+              and float(f'{float(dx):e}'.split('e')[0]) > extra_sf_lim
               and abs(np.floor(_log10(abs(float(dx))))) < min_exp)
           or (float(dx) == 0 and abs(np.floor(_log10(abs(x)))) < min_exp)
           or np.isinf(min_exp)):
@@ -237,7 +236,7 @@ def round_sf_unc(x, dx, n=None, min_exp=None, max_dec=None, extra_sf_lim=None):
         dy = round_sf(dx, n, min_exp, extra_sf_lim)
         if not use_exp:
             m = len(dy.split('.')[1]) if '.' in dy else 0
-            y = '{:.{}f}'.format(x, m) if x != 0. else '0'
+            y = f'{x:.{m}f}' if x != 0. else '0'
             if m == 0 and dx < x:
                 num_digits_y = len(y)
                 num_digits_dy = len(dy)
@@ -245,13 +244,13 @@ def round_sf_unc(x, dx, n=None, min_exp=None, max_dec=None, extra_sf_lim=None):
                 num_digits_x = len(str(x).split('.')[0])
                 if num_digits_y > num_digits_x:
                     m -= 1
-                base_dy = '{:e}'.format(float(dy)).split('e')[0]
+                base_dy = f'{float(dy):e}'.split('e')[0]
                 if float(base_dy) <= extra_sf_lim:
                     m += 1
                 y = round_sf(x, m, min_exp=np.inf, extra_sf_lim=1-1e-8)
         else:
-            base_y, exp_y = '{:e}'.format(x).split('e')
-            base_dy, exp_dy = '{:e}'.format(dx).split('e')
+            base_y, exp_y = f'{x:e}'.split('e')
+            base_dy, exp_dy = f'{dx:e}'.split('e')
             exp_y, exp_dy = int(exp_y), int(exp_dy)
             d = exp_dy - exp_y
             if x != 0. and d < 0:
@@ -296,7 +295,7 @@ def round_sf_unc(x, dx, n=None, min_exp=None, max_dec=None, extra_sf_lim=None):
     else:
         if not np.isinf(x):
             if not 'e' in y:
-                y = '{:e}'.format(float(y))
+                y = f'{float(y):e}'
             exp = int(y.split('e')[1]) if 'e' in y else 0
             if abs(exp) < min_exp:
                 use_exp = False
@@ -318,9 +317,9 @@ def round_sf_unc(x, dx, n=None, min_exp=None, max_dec=None, extra_sf_lim=None):
             d_ = len(dy.split('.')[-1]) if '.' in dy else 0
             dy_ = round_sf(float(dy)*10**(d-d_), n, 0, extra_sf_lim)
             dy = dy_.split('e')[0]
-            exp_dy = dy_.split('e')[1] if 'e' in dy_ else 0
-            exp_y_ = 0 if exp_y is None else exp_y
-            if int(exp_y_) > int(exp_dy):
+            exp_dy = int(dy_.split('e')[1]) if 'e' in dy_ else 0
+            exp_y_ = 0 if exp_y is None else int(exp_y)
+            if exp_y_ != exp_dy:
                 dy = round_sf(float(dy)*10**int(exp_dy), n, np.inf, extra_sf_lim)
                 if '.' in dy:
                     dy = dy.split('.')[-1]
@@ -381,22 +380,22 @@ def round_sf_uncs(x, dx, n=None, min_exp=None, max_dec=None, extra_sf_lim=None):
         num_dec_2 = len(y2.split('e')[0].split('.')[1]) if '.' in y2 else 0
         if num_dec_2 > num_dec_1:
             diff = num_dec_2 - num_dec_1
-            y1, dy1 = round_sf_unc(x, dx1, n+diff, min_exp, max_dec, extra_sf_lim)
-            y2, dy2 = round_sf_unc(x, dx2, n, min_exp, max_dec, extra_sf_lim)
+            y1, dy1 = round_sf_unc(x, dx1, n, min_exp, max_dec, extra_sf_lim)
+            y2, dy2 = round_sf_unc(x, dx2, n-diff, min_exp, max_dec, extra_sf_lim)
         else:
             diff = num_dec_1 - num_dec_2
             off1, off2 = 0, 0
             if num_dec_1 == 0 == num_dec_2:
-                base_dy1 = '{:e}'.format(dx1).split('e')[0]
-                base_dy2 = '{:e}'.format(dx2).split('e')[0]
+                base_dy1 = f'{dx1:e}'.split('e')[0]
+                base_dy2 = f'{dx2:e}'.split('e')[0]
                 b1 = float(base_dy1) if np.isfinite(dx1) else 10.
                 b2 = float(base_dy2) if np.isfinite(dx2) else 10.
                 if dx2 > dx1 and b1 <= extra_sf_lim and b2 > extra_sf_lim:
                     off2 = 1
                 if dx1 > dx2 and b2 <= extra_sf_lim and b1 > extra_sf_lim:
                     off1 = 1
-            y1, dy1 = round_sf_unc(x, dx1, n+off1, min_exp, max_dec, extra_sf_lim)
-            y2, dy2 = round_sf_unc(x, dx2, n+diff+off2, min_exp, max_dec, extra_sf_lim)
+            y1, dy1 = round_sf_unc(x, dx1, n+off1-diff, min_exp, max_dec, extra_sf_lim)
+            y2, dy2 = round_sf_unc(x, dx2, n+off2, min_exp, max_dec, extra_sf_lim)
         y = y1 if dx2 > dx1 else y2
         if ')' in dy1 and ')' not in dy2 or ')' in dy2 and '.' in dy2:
             _, dy2 = round_sf_unc(x, dx[1], n, min_exp, max_dec-1, extra_sf_lim)
@@ -447,7 +446,7 @@ class RichValue():
         for kwarg in kwargs:
             if kwarg not in acronyms:
                 raise TypeError("RichValue() got an unexpected keyword argument"
-                                + " '{}'".format(kwarg))
+                                + f" '{kwarg}'")
         if 'main_value' in kwargs:
             main = kwargs['main_value']
         if main is None:
@@ -466,7 +465,7 @@ class RichValue():
         
         input_main = copy.copy(main)
         if not domain[0] <= domain[1]:
-            raise Exception('Invalid domain {}.'.format(domain))
+            raise Exception(f'Invalid domain {domain}.')
         
         if type(main) in [list, tuple]:
             is_lolim, is_uplim, is_range = False, False, False
@@ -500,8 +499,7 @@ class RichValue():
             main = (main[0] + main[1]) / 2
             
         if not np.isnan(main) and not domain[0] <= main <= domain[1]:
-            raise Exception('Invalid main value {} for domain {}.'
-                            .format(main, domain))
+            raise Exception(f'Invalid main value {main} for domain {domain}.')
         
         if type(unc) is np.ndarray:
             unc = unc.tolist()
@@ -570,7 +568,7 @@ class RichValue():
         global variable_count
         if domain[0] != domain[1]:
             variable_count += 1
-            variable = 'x{}'.format(variable_count)
+            variable = f'x{variable_count}'
             variables = [variable]
             expression = variable
         else:
@@ -605,7 +603,7 @@ class RichValue():
         self._unc = x
         global variable_count
         variable_count += 1
-        variable = 'x{}'.format(variable_count)
+        variable = f'x{variable_count}'
         variables = [variable]
         expression = variable
         self.variables = variables
@@ -928,17 +926,17 @@ class RichValue():
                         if dy1 == '':
                             dy1 = dy2 = '0'
                         if float(dy1) != 0:
-                            text = '{}+/-{} e{}'.format(y, dy1, a)
+                            text = f'{y}+/-{dy1} e{a}'
                         else:
                             y = int(round(float(y))) if is_int else y
-                            text = '{} e{}'.format(y, a)
+                            text = f'{y} e{a}'
                     else:
-                        text = '{}-{}+{} e{}'.format(y, dy1, dy2, a)
+                        text = f'{y}-{dy1}+{dy2} e{a}'
                 else:
                     if dy1 == dy2:
-                        text = '{}{} e{}'.format(y, dy1, a)
+                        text = f'{y}{dy1} e{a}'
                     else:
-                        text = '{}{}{} e{}'.format(y, dy1, dy2, a)
+                        text = f'{y}{dy1}{dy2} e{a}'
                 if not use_exp:
                     text = text.replace(' e0','')
             else:
@@ -956,7 +954,7 @@ class RichValue():
                 elif is_uplim:
                     sign = '<'
                     y = int(np.ceil(float(y))) if is_int else y
-                text = '{} {} e{}'.format(sign, y, a)
+                text = f'{sign} {y} e{a}'
             if (show_asterisk and self.pdf_info != 'default'
                     and ('name' not in self.pdf_info
                          or 'name' in self.pdf_info
@@ -976,7 +974,7 @@ class RichValue():
                 text = text.replace(' e0','')
             if show_domain and domain[0] != domain[1]:
                 d1, d2 = round_sf(domain[0], n=2), round_sf(domain[1], n=2)
-                text += ' [{},{}]'.format(d1, d2)
+                text += f' [{d1},{d2}]'
         elif not is_range and np.isnan(main):
             text = 'nan'
         else:
@@ -993,14 +991,14 @@ class RichValue():
             while str(x1) == str(x2):
                 x1.num_sf = x1.num_sf + 1
                 x2.num_sf = x2.num_sf + 1
-            text = '{} -- {}'.format(x1, x2)
+            text = f'{x1} -- {x2}'
         if show_domain and domain[0] != domain[1]:
             domain = ' [' + text.split('[')[1].split(']')[0] + ']'
             text = text.replace(domain, '') + domain
         return text
         
     def __repr__(self):
-        if self.is_exact:
+        if self.is_exact and not defaultparams['show domain']:
             return self.main.__format__('')
         else:
             return self._format_as_rich_value()
@@ -1064,8 +1062,7 @@ class RichValue():
         if ((float(x) > float(max(dx))
              and abs(np.floor(_log10(abs(float(x))))) < min_exp)
              or (float(x) <= float(max(dx))
-                 and float('{:e}'.format(max(dx))
-                           .split('e')[0]) > extra_sf_lim
+                 and float(f'{max(dx):e}'.split('e')[0]) > extra_sf_lim
                  and any(abs(np.floor(_log10(abs(np.array(dx))))) < min_exp))
              or self.is_exact and abs(np.floor(_log10(abs(x)))) < min_exp
              or self.is_lim and abs(np.floor(_log10(abs(float(x))))) < min_exp
@@ -1089,11 +1086,11 @@ class RichValue():
                                 n += 1
                             y = (int(round(x)) if is_int else
                                  round_sf(x, n, np.inf, extra_sf_lim))
-                            text = '${}$'.format(y)
+                            text = f'${y}$'
                         else:
                             y, dy = round_sf_unc(x, dx[0], n, min_exp,
                                                  max_dec, extra_sf_lim)
-                            text = '${} \\pm {}$'.format(y, dy)
+                            text = f'${y} \\pm {dy}$'
                     else:
                         y, dy = round_sf_uncs(x, dx, n, min_exp, max_dec, extra_sf_lim)
                         text = '$'+y + '_{-'+dy[0]+'}^{+'+dy[1]+'}$'
@@ -1105,7 +1102,7 @@ class RichValue():
                         symbol = '<'
                         y = int(np.ceil(x)) if is_int else x
                     y = round_sf(y, n, min_exp, extra_sf_lim)
-                    text = '${} {}$'.format(symbol, y)
+                    text = f'${symbol} {y}$'
             elif not is_range and use_exp:
                 if not self.is_lim:
                     if unc_r[0] == unc_r[1]:
@@ -1121,8 +1118,7 @@ class RichValue():
                             else:
                                 a = '0'
                             a = str(int(a))
-                            text = ('${} {}'.format(y, mult_symbol)
-                                    + ' 10^{'+a+'}$')
+                            text = f'${y} {mult_symbol}'+' 10^{'+a+'}$'
                         else:
                             y, dy = round_sf_unc(x, dx[0], n, min_exp,
                                                  max_dec, extra_sf_lim)
@@ -1136,11 +1132,10 @@ class RichValue():
                                 a = 0
                             a = str(int(a))
                             if '(' in dy:
-                                text = ('$({}{}) '.format(y, dy)
-                                         + mult_symbol + ' 10^{'+a+'}$')
+                                text = f'$({y}{dy}) {mult_symbol}'+' 10^{'+a+'}$'
                             else:
-                                text = ('$({} \\pm {}) '.format(y, dy)
-                                         + mult_symbol + ' 10^{'+a+'}$')
+                                text = (f'$({y} \\pm {dy}) {mult_symbol}'
+                                        + ' 10^{'+a+'}$')
                     else:
                         y, dy = round_sf_uncs(x, [dx[0], dx[1]], n, min_exp,
                                               max_dec, extra_sf_lim)
@@ -1172,8 +1167,7 @@ class RichValue():
                         y, a = y.split('e')
                     else:
                         a = '0'
-                    text = ('${} {} {}'.format(symbol, y, mult_symbol)
-                            + ' 10^{'+a+'}$')
+                    text = (f'${symbol} {y} {mult_symbol}'+' 10^{'+a+'}$')
                 a = int(text.split('10^{')[1].split('}')[0])
                 if abs(a) < min_exp:
                     y = RichValue(x, dx, is_lolim, is_uplim,
@@ -1185,7 +1179,7 @@ class RichValue():
                 if (not use_extra_sf_in_exacts and omit_ones_in_sci_notation
                      and dx[0] == dx[1] and dx[0] == 0 or np.isnan(dx[0])):
                     if '.' not in text:
-                        text = text.replace('1 {} '.format(mult_symbol), '')
+                        text = text.replace(f'1 {mult_symbol} ', '')
             else:
                 x1 = RichValue(main - unc[0], domain=domain)
                 x2 = RichValue(main + unc[1], domain=domain)
@@ -1196,7 +1190,7 @@ class RichValue():
                 while str(x1) == str(x2):
                     x1.num_sf = x1.num_sf + 1
                     x2.num_sf = x2.num_sf + 1
-                text = '{} -- {}'.format(x1.latex(*kwargs), x2.latex(*kwargs))
+                text = f'{x1.latex(*kwargs)} -- {x2.latex(*kwargs)}'
         else:
             text = (str(main).replace('NaN','nan').replace('nan','...')
                     .replace('inf','$\\infty$'))
@@ -1210,7 +1204,7 @@ class RichValue():
                 d2 = '\\infty'
             elif round(d2) != d2:
                 d2 = round_sf(d2, n=2)
-            domain = ' $[{},\\,{}]$'.format(d1, d2)
+            domain = f' $[{d1},\\,{d2}]$'
             text = text.replace(domain,'') + domain
         if not show_dollars:
             text = text.replace('$','')
@@ -1238,8 +1232,8 @@ class RichValue():
         rvalue.extra_sf_lim = self.extra_sf_lim
         rvalue.variables = self.variables
         expression = self.expression
-        rvalue.expression = ('-{}'.format(expression) if
-               self.expression.count('x') == 1 else '-({})'.format(expression))
+        rvalue.expression = (f'-{expression}' if self.expression.count('x') == 1
+                             else f'-({expression})')
         if self.pdf_info != 'default':
             rvalue.pdf_info = edit_pdf_info(self.pdf_info, lambda x: -x)
         return rvalue
@@ -1276,7 +1270,7 @@ class RichValue():
         rvalue.max_dec = self.max_dec
         rvalue.extra_sf_lim = self.extra_sf_lim
         rvalue.variables = self.variables
-        rvalue.expression = 'abs({})'.format(self.expression)
+        rvalue.expression = f'abs({self.expression})'
         if self.pdf_info != 'default':
             rvalue.pdf_info = edit_pdf_info(self.pdf_info, lambda x: abs(x))
         return rvalue
@@ -1293,8 +1287,7 @@ class RichValue():
             other_vars = []
             other_expression = str(other)
         is_other_numeric = type(other) is not RichValue
-        expression = ('{}+{}'.format(self.expression, other_expression)
-                      .replace('+-','-'))
+        expression = f'{self.expression}+{other_expression}'.replace('+-','-')
         variables = list(dict.fromkeys(self.variables + other_vars).keys())
         common_vars = set(self.variables) & set(other_vars)
         if len(common_vars) == 0:
@@ -1309,7 +1302,7 @@ class RichValue():
                 rvalue = add_rich_values(self, other)
         else:
             vars_str = ','.join(variables)
-            function = eval('lambda {}: {}'.format(vars_str, expression))
+            function = eval(f'lambda {vars_str}: {expression}')
             args = [variable_dict[var] for var in variables]
             rvalue = function_with_rich_values(function, args)
         rvalue.variables = list(variables)
@@ -1343,7 +1336,7 @@ class RichValue():
             other_vars = []
             other_expression = str(other)
         is_other_numeric = type(other) is not RichValue
-        expression = '({})*({})'.format(self.expression, other_expression)
+        expression = f'({self.expression})*({other_expression})'
         variables = list(dict.fromkeys(self.variables + other_vars).keys())
         common_vars = set(self.variables) & set(other_vars)
         if len(common_vars) == 0:
@@ -1359,7 +1352,7 @@ class RichValue():
                 rvalue = multiply_rich_values(self, other)
         else:
             vars_str = ','.join(variables)
-            function = eval('lambda {}: {}'.format(vars_str, expression))
+            function = eval(f'lambda {vars_str}: {expression}')
             args = [variable_dict[var] for var in variables]
             rvalue = function_with_rich_values(function, args)
         rvalue.variables = list(variables)
@@ -1387,7 +1380,7 @@ class RichValue():
             other_vars = []
             other_expression = str(other)
         is_other_numeric = type(other) is not RichValue
-        expression = '({})/({})'.format(self.expression, other_expression)
+        expression = f'({self.expression})/({other_expression})'
         variables = list(dict.fromkeys(self.variables + other_vars).keys())
         common_vars = set(self.variables) & set(other_vars)
         if len(common_vars) == 0:
@@ -1407,7 +1400,7 @@ class RichValue():
                 rvalue = divide_rich_values(self, other)
         else:
             vars_str = ','.join(variables)
-            function = eval('lambda {}: {}'.format(vars_str, expression))
+            function = eval(f'lambda {vars_str}: {expression}')
             args = [variable_dict[var] for var in variables]
             rvalue = function_with_rich_values(function, args)
         rvalue.variables = list(variables)
@@ -1472,7 +1465,7 @@ class RichValue():
         else:
             other_vars = []
             other_expression = str(other)
-        expression = '({})**({})'.format(self.expression, other_expression)
+        expression = f'({self.expression})**({other_expression})'
         variables = list(dict.fromkeys(self.variables + other_vars).keys())
         common_vars = set(self.variables) & set(other_vars)
         if len(common_vars) == 0:
@@ -1523,7 +1516,7 @@ class RichValue():
             rvalue.extra_sf_lim = self.extra_sf_lim
         else:
             vars_str = ','.join(variables)
-            function = eval('lambda {}: {}'.format(vars_str, expression))
+            function = eval(f'lambda {vars_str}: {expression}')
             args = [variable_dict[var] for var in variables]
             rvalue = function_with_rich_values(function, args)
         rvalue.variables = list(variables)
@@ -1771,7 +1764,7 @@ class RichArray(np.ndarray):
         for kwarg in kwargs:
             if kwarg not in acronyms:
                 raise TypeError("RichArray() got an unexpected keyword argument"
-                                + " '{}'".format(kwarg))
+                                + f" '{kwarg}'")
         if 'main_values' in kwargs:
             mains = kwargs['main_values']
         if mains is None:
@@ -1968,11 +1961,11 @@ class RichArray(np.ndarray):
     def expression(self):
         self_flat = self.flat
         expr_list = [x.expression for x in self_flat]
-        if all(['[{}]'.format(i) in expr for (i,expr) in enumerate(expr_list)]):
+        if all([f'[{i}]' in expr for (i,expr) in enumerate(expr_list)]):
             expr = expr_list[0].replace('[0]','')
         else:
             expr_list = np.array(expr_list).reshape(self.shape).tolist()
-            expr = 'np.array({})'.format(expr_list)
+            expr = f'np.array({expr_list})'
         expr = expr.replace("'","")
         if expr[0] == '(' and expr[-1] == ')':
             expr = expr[1:-1]
@@ -2041,7 +2034,7 @@ class RichArray(np.ndarray):
                 del params[entry]
         for name in params:
             if name not in attributes:
-                print("Warning: Parameter '{}' does not exist.".format(name))
+                print(f"Warning: Parameter '{name}' does not exist.")
         for x in self.flat:
             if 'domain' in params:
                 x.domain = params['domain']
@@ -2145,7 +2138,7 @@ class RichDataFrame(pd.DataFrame):
         """Apply the input RichArray attribute/method with 1 element."""
         code = [
             'try:',
-            '    data = self.values.{}'.format(name),
+            f'    data = self.values.{name}',
             'except:',
             '    array = self.values',
             '    shape = array.shape',
@@ -2153,7 +2146,7 @@ class RichDataFrame(pd.DataFrame):
                        + '.reshape(shape))',
             '    data = np.zeros(shape, object)',
             '    cond = types == RichValue',
-            '    data[cond] = array[cond].{}'.format(name),
+            f'    data[cond] = array[cond].{name}',
             '    cond = ~cond',
             '    data[cond] = array[cond]',
             'df = pd.DataFrame(data, self.index, self.columns)']
@@ -2171,7 +2164,7 @@ class RichDataFrame(pd.DataFrame):
                    + '.reshape(shape))',
             'data = np.zeros(shape, object)',
             'cond = types == RichValue',
-            'new_elements = array[cond].{}'.format(name),
+            f'new_elements = array[cond].{name}',
             'new_elements = [[x[0], x[1]] for x in new_elements]',
             'new_subarray = np.frompyfunc(list, 0, 1)'
                  + '(np.empty(cond.sum(), dtype=object))',
@@ -2239,15 +2232,15 @@ class RichDataFrame(pd.DataFrame):
     def intervals(self, sigmas=None):
         sigmas = set_default_value(sigmas, 'sigmas for intervals')
         sigmas = str(sigmas).replace('inf', 'np.inf')
-        return self._property2('intervals({})'.format(sigmas))
+        return self._property2(f'intervals({sigmas})')
 
     def signs(self, sigmas=np.inf):
         sigmas = str(sigmas).replace('inf', 'np.inf')
-        return self._property('signs({})'.format(sigmas))
+        return self._property(f'signs({sigmas})')
     
     def flatten_property(self, name):
         """Separate the list elements from the given attribute/method output."""
-        df = eval('self.{}'.format(name))
+        df = eval(f'self.{name}')
         df1, df2 = df.copy(), df.copy()
         columns = df.columns
         are_lists = False
@@ -2279,7 +2272,7 @@ class RichDataFrame(pd.DataFrame):
                 del params[entry]
         for name in params:
             if name not in attributes:
-                print("Warning: Parameter '{}' does not exist.".format(name))
+                print(f"Warning: Parameter '{name}' does not exist.")
         for name in attributes:
             if name in params and type(params[name]) is not dict:
                 default_param = params[name]
@@ -2626,7 +2619,7 @@ class ComplexRichValue():
         for kwarg in kwargs:
             if kwarg not in acronyms:
                 raise TypeError("RichValue() got an unexpected keyword argument"
-                                + " '{}'".format(kwarg))
+                                + f" '{kwarg}'")
         if 'real_part' in kwargs:
             real = kwargs['real_part']
         if 'imaginary_part' in kwargs:
@@ -2797,8 +2790,7 @@ class ComplexRichValue():
     
     @property
     def expression(self):
-        expression = 'complex({},{})'.format(self.real.expression,
-                                             self.imag.expression)
+        expression = f'complex({self.real.expression},{self.imag.expression})'
         return expression
 
     def _format_as_complex_rich_value(self):
@@ -2806,11 +2798,11 @@ class ComplexRichValue():
         real = self.real
         imag = self.imag
         if imag.is_exact and imag.main == 0:
-            text = '{}'.format(real)
+            text = f'{real}'
         elif real.is_exact and real.main == 0:
-            text = '{} j'.format(imag)
+            text = f'{imag} j'
         else:
-            text = '{} + ({}) j'.format(real, imag)
+            text = f'{real} + ({imag}) j'
             if imag.is_exact:
                 text = text.replace('(','').replace(')','')
         text = text.replace('+ -', '- ').replace('+ (-', '- (')
@@ -2830,12 +2822,11 @@ class ComplexRichValue():
         real = self.real
         imag = self.imag
         if imag.is_exact and imag.main == 0:
-            text = '{}'.format(real.latex(**kwargs))
+            text = f'{real.latex(**kwargs)}'
         elif real.is_exact and real.main == 0:
-            text = '{}\\,i'.format(imag.latex(**kwargs))
+            text = f'{imag.latex(**kwargs)}\\,i'
         else:
-            text = '{} + ({})\\,i'.format(real.latex(**kwargs),
-                                        imag.latex(**kwargs))
+            text = f'{real.latex(**kwargs)} + ({imag.latex(**kwargs)})\\,i'
             if imag.is_exact:
                 text = text.replace('(','').replace(')','')
         text = (text.replace('$ + ', ' + ').replace(' + $', ' + ')
@@ -2932,11 +2923,11 @@ class ComplexRichValue():
             rvalue = ComplexRichValue(value.real, value.imag,
                                         domain=domain)
             variables = self.variables
-            expression = '({})**({})'.format(self.expression, str(other))
+            expression = f'({self.expression})**({str(other)})'
             rvalue.real.variables = variables
             rvalue.real.variables = variables
-            rvalue.real.expression = 'np.real({})'.format(expression)
-            rvalue.imag.expression = 'np.imag({})'.format(expression)
+            rvalue.real.expression = f'np.real({expression})'
+            rvalue.imag.expression = f'np.imag({expression})'
         else:
             rvalue = function_with_rich_values('{}**{}', [self, other])
         return rvalue
@@ -3266,11 +3257,11 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
         If True and there is a rich value with the uncertainty written between
         parenthesis, the default maximum number of decimals to show
         uncertainties between parenthesis will be used instead of inferring it
-        from the input text.
+        from the input text. By default, it is False.
     use_default_extra_sf_lim : bool, optional
         If True, the default limit for extra significant figure will be used
         instead of inferring it from the input text. This will reduce the
-        computation time a little bit.
+        computation time a little bit. By default, it is False.
 
     Returns
     -------
@@ -3332,7 +3323,7 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
                 min_exp = abs(int(text.split('e')[1]))
             else:
                 min_exp = np.inf
-                text = '{} e0'.format(text)
+                text = f'{text} e0'
             min_exp = min(min_exp, defaultparams['minimum exponent for '
                                                  + 'scientific notation'])
             single_value = True
@@ -3344,7 +3335,7 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
             if single_value:
                 x, e = text.split(' ')
                 dx = 0.
-                text = '{}+/-{} {}'.format(x, dx, e)
+                text = f'{x}+/-{dx} {e}'
             if text.startswith('<'):
                 x = text.replace('<','').replace(' ','')
                 dx1, dx2 = [np.nan]*2
@@ -3372,15 +3363,10 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
                         if dx1.startswith('+'):
                             dx1, dx2 = dx2, dx1
                         dx1 = dx1[1:]
-                        dx2 = dx2[1:]
-                    d = len(x.split('.')[1]) if '.' in x else 0
-                    d1 = len(dx1.split('.')[1]) if '.' in dx1 else 0
-                    d2 = len(dx1.split('.')[1]) if '.' in dx2 else 0
-                    dx1 = str(float(dx1)*10**(-(d-d1)))
-                    dx2 = str(float(dx2)*10**(-(d-d2)))
+                        dx2 = dx2[1:]  
                 elif '+/-' in text:
                     x, dx = x_dx.split('+/-')
-                    text = '{}-{}+{} {}'.format(x, dx, dx, e)
+                    text = f'{x}-{dx}+{dx} {e}'
                     dx1, dx2 = dx, dx
                 else:
                     if '+' in text:
@@ -3399,15 +3385,25 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
                     else:
                         x = text.split(' ')[0]
                         dx1, dx2 = '0', '0'
-                x = '{} {}'.format(x, e)
-                dx1 = '{} {}'.format(dx1, e)
-                dx2 = '{} {}'.format(dx2, e)
+                x = f'{x} {e}'
+                if 'e' in dx1:
+                    dx1, exp1 = dx1.split('e')
+                    exp_ = int(e[1:]) + int(exp1)
+                    dx1 = f'{dx1} e{exp_}'
+                else:
+                    dx1 = f'{dx1} {e}'
+                if 'e' in dx2:
+                    dx2, exp2 = dx1.split('e')
+                    exp_ = int(e[1:]) + int(exp2)
+                    dx2 = f'{dx2} e{exp_}'
+                else:
+                    dx2 = f'{dx2} {e}'   
             x = parse_value(x)
             dx1 = parse_value(dx1)
             dx2 = parse_value(dx2)
-            if '(' in dx1 and not use_default_max_dec:
+            if '(' in text and not use_default_max_dec:
                     num_dec = len(x.split('.')[1].split('e')[0]) if '.' in x else 0
-                    max_dec = num_dec - 1
+                    max_dec = max(0, num_dec - 1)
             else:
                 max_dec = default_max_dec
             if not use_default_extra_sf_lim:
@@ -4047,8 +4043,7 @@ def general_pdf(x, loc=0, scale=1, bounds=[-np.inf,np.inf],
     x = np.array(x)
     s = np.abs(s)
     if not b[0] < m < b[1]:
-        raise Exception('Center ({}) is not inside the boundaries {}.'
-                        .format(m, b))
+        raise Exception(f'Center ({m}) is not inside the boundaries {b}.')
     a = [m - b[0], b[1] - m]
     if not hasattr(s, '__iter__'):
         s = [s]*2
@@ -4171,8 +4166,7 @@ def general_distribution(loc=0, scale=1, bounds=None, size=1):
     if bounds is None:
         b = [m - 5*s, m + 5*s]
     if not b[0] < m < b[1]:
-        raise Exception('main ({}) is not inside the boundaries {}.'
-                        .format(m, b))
+        raise Exception(f'Median ({m}) is not inside the boundaries {b}.')
     if not hasattr(s, '__iter__'):
         s = [s, s]
     low = max(m-5*s[0], b[0])
@@ -4256,10 +4250,10 @@ def distr_with_rich_values(function, args, len_samples=None,
     """
     Same as function_with_rich_values, but just returns the final distribution.
     """
-    len_samples = (int(len_samples) if len_samples is not None else
-                   int(len(args)**0.5 * defaultparams['size of samples']))
     if type(args) not in (tuple, list):
         args = [args]
+    len_samples = (int(len_samples) if len_samples is not None else
+                   int(len(args)**0.5 * defaultparams['size of samples']))
     args = [rich_value(arg) if type(arg) not in (RichValue, ComplexRichValue)
             else arg for arg in args]
     if type(function) is str:
@@ -4269,7 +4263,7 @@ def distr_with_rich_values(function, args, len_samples=None,
         expressions = [arg.expression for arg in args]
         function = function.replace('{}','({})')
         expression = function.format(*expressions).replace(' ', '')
-        function = eval('lambda {}: {}'.format(vars_str, expression))
+        function = eval(f'lambda {vars_str}: {expression}')
         args = [variable_dict[var] for var in variables]
     if len_samples is None:
         len_samples = int(len(args)**0.5 * defaultparams['size of samples'])
@@ -4454,7 +4448,7 @@ def evaluate_distr(distr, domain=None, function=None, args=None,
         expressions = [arg.expression for arg in args]
         function = function.replace('{}','({})')
         expression = function.format(*expressions).replace(' ', '')
-        function = eval('lambda {}: {}'.format(vars_str, expression))
+        function = eval(f'lambda {vars_str}: {expression}')
         args = [variable_dict[var] for var in variables]
     
     def repeat_functions(functions, initial_values, num_reps_lims=1):
@@ -4499,8 +4493,8 @@ def evaluate_distr(distr, domain=None, function=None, args=None,
     is_complex = 'complex' in str(distr.dtype)
     if is_complex:
         if type(input_function) is str:
-            function_real = 'np.real({})'.format(input_function)
-            function_imag = 'np.imag({})'.format(input_function)
+            function_real = f'np.real({input_function})'
+            function_imag = f'np.imag({input_function})'
         else:
             function_real = lambda x: np.real(function(x))
             function_imag = lambda x: np.imag(function(x))
@@ -4524,8 +4518,8 @@ def evaluate_distr(distr, domain=None, function=None, args=None,
         if finite_fraction < 0.7:
             decimals = (0 if finite_fraction >= 0.01
                         else int(abs(np.floor(np.log10(100*finite_fraction)))))
-            print('Warning: Valid values are only {:.{}f} % of'
-                  ' the distribution.'.format(100*finite_fraction, decimals))
+            print('Warning: Valid values are only'
+                  f' {100*finite_fraction:.{decimals}f} % of the distribution.')
 
     distr_unique = np.unique(distr)
     is_exact = len(distr_unique) == 1
@@ -4615,7 +4609,7 @@ def evaluate_distr(distr, domain=None, function=None, args=None,
     if is_range:
         dist = [main[0] - domain[0], domain[1] - main[1]]
         rel_dist = np.array(dist) / (main[1] - main[0])
-        threshold = 0.01
+        threshold = 1e-12
         if rel_dist[0] < threshold:
             main[0] = domain[0]
         if rel_dist[1] < threshold:
@@ -4767,9 +4761,10 @@ def function_with_rich_values(function, args, unc_function=None,
         """Create a distribution of domains with the given function."""
         args_distr = np.array([loguniform_distribution(*arg.domain,
                                               len_samples//3) for arg in args])
-        distr = (function(*args_distr) if is_vectorizable
-                 else np.array([function(*args_distr[:,i])
-                                for i in range(len_samples//3)]))
+        with np.errstate(over='ignore'):
+            distr = (function(*args_distr) if is_vectorizable
+                     else np.array([function(*args_distr[:,i])
+                                    for i in range(len_samples//3)]))
         if output_size == 1 and len(distr.shape) == 1:
             distr = np.array([distr]).transpose()
         return distr
@@ -4782,8 +4777,7 @@ def function_with_rich_values(function, args, unc_function=None,
             domain1 = -np.inf
         if not np.isfinite(domain2):
             domain2 = np.inf
-        domain1, domain2 = remove_zero_infs([domain1, domain2],
-                                            zero_log, inf_log)
+        domain1, domain2 = remove_zero_infs([domain1, domain2], zero_log, inf_log)
         domain = [float(round_sf(domain1, num_sf+3)),
                   float(round_sf(domain2, num_sf+3))]
         domain = add_zero_infs(domain, zero_log+6, inf_log-6)
@@ -4804,7 +4798,7 @@ def function_with_rich_values(function, args, unc_function=None,
         expressions = [arg.expression for arg in args]
         function = function.replace('{}','({})')
         expression = function.format(*expressions).replace(' ', '')
-        function = eval('lambda {}: {}'.format(vars_str, expression))
+        function = eval(f'lambda {vars_str}: {expression}')
         args = [variable_dict[var] for var in variables]
         if len(args) > 1:
             common_vars = set(args[0].variables)
@@ -4884,8 +4878,7 @@ def function_with_rich_values(function, args, unc_function=None,
                     if expr[0] == '(' and expr[-1] == ')':
                         expressions[k] = expr[1:-1]
             else:
-                expressions = ['({})[{}]'.format(expression,k)
-                               for k in range(output_size)]
+                expressions = [f'({expression})[{k}]' for k in range(output_size)]
 
     if ((domain is None)
             or (domain is not None and not hasattr(domain[0], '__iter__'))):
@@ -5014,8 +5007,8 @@ def function_with_rich_values(function, args, unc_function=None,
                 else:
                     rval_k.real.variables = variables
                     rval_k.imag.variables = variables
-                    rval_k.real.expression = 'np.real({})'.format(expression)
-                    rval_k.imag.expression = 'np.imag({})'.format(expression)
+                    rval_k.real.expression = f'np.real({expression})'
+                    rval_k.imag.expression = f'np.imag({expression})'
             output += [rval_k]
         
     if output_size == 1 and output_type is not list:
@@ -5203,7 +5196,7 @@ def fmean(array, function='None', inverse_function='None',
     if type(array) is not RichArray:
         array = rich_array(array)
     if function == 'None' and weights is None:
-        expression = 'np.mean({})'.format(array.expression)
+        expression = f'np.mean({array.expression})'
     elif function == 'None' and weights is not None and weight_function is None:
         expression = 'np.average({}, weights={})'.format(array.expression,
                                                 rich_array(weights).expression)
@@ -5473,7 +5466,7 @@ def curve_fit(x, y, function, guess, num_samples=3000,
         else:
             num_fails += 1
         if verbose and ((i+1) % (num_samples//4)) == 0:
-            print('  {} %'.format(100*(i+1)//num_samples))
+            print(f'  {100*(i+1)//num_samples} %')
     if num_fails > 0.9*num_samples:
         raise Exception('The fit failed more than 90 % of the time.')
     params_fit = [evaluate_distr(samples[i],
@@ -5563,7 +5556,7 @@ def point_fit(y, function, guess, num_samples=3000,
         else:
             num_fails += 1
         if ((i+1) % (num_samples//4)) == 0:
-            print('  {} %'.format(100*(i+1)//num_samples))
+            print(f'  {100*(i+1)//num_samples} %')
     if num_fails > 0.9*num_samples:
         raise Exception('The fit failed more than 90 % of the time.')
     params_fit = [evaluate_distr(samples[i],
