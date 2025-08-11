@@ -37,7 +37,7 @@ IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 """
 
-__version__ = '4.2.12'
+__version__ = '4.2.14'
 __author__ = 'Andrés Megías Toledano'
 
 import copy
@@ -154,7 +154,7 @@ def round_sf(x, n=None, min_exp=None, extra_sf_lim=None):
     if round(float(base), n) <= extra_sf_lim:
         n += 1
     integers = len(y.split('.')[0])
-    if x >= 1 and integers >= n:
+    if float(y) >= 1 and integers >= n:
         y = y.replace('.0','')
     digits = str(y).replace('.','')
     for i in range(len(digits)-1):
@@ -396,7 +396,18 @@ def round_sf_uncs(x, dx, n=None, min_exp=None, max_dec=None, extra_sf_lim=None):
                     off1 = 1
             y1, dy1 = round_sf_unc(x, dx1, n+off1-diff, min_exp, max_dec, extra_sf_lim)
             y2, dy2 = round_sf_unc(x, dx2, n+off2, min_exp, max_dec, extra_sf_lim)
-        y = y1 if dx2 > dx1 else y2
+        num_dec_1 = len(y1.split('e')[0].split('.')[1]) if '.' in y1 else 0
+        num_dec_2 = len(y2.split('e')[0].split('.')[1]) if '.' in y2 else 0
+        if num_dec_1 > num_dec_2:
+            m = num_dec_2 if num_dec_2 > 0 else None
+            dy1 = str(round(float(dy1), m))
+            y = y2
+        elif num_dec_2 > num_dec_1:
+            m = num_dec_1 if num_dec_1 > 0 else None
+            dy2 = str(round(float(dy2), m))
+            y = y1
+        else:
+            y = y1
         if ')' in dy1 and ')' not in dy2 or ')' in dy2 and '.' in dy2:
             _, dy2 = round_sf_unc(x, dx[1], n, min_exp, max_dec-1, extra_sf_lim)
             dy2 = '(' + dy2[1:-1] + '0' + ')'
@@ -3363,7 +3374,12 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
                         if dx1.startswith('+'):
                             dx1, dx2 = dx2, dx1
                         dx1 = dx1[1:]
-                        dx2 = dx2[1:]  
+                        dx2 = dx2[1:]
+                    d = len(x.split('.')[1]) if '.' in x else 0
+                    d1 = len(dx1.split('.')[1]) if '.' in dx1 else 0
+                    d2 = len(dx1.split('.')[1]) if '.' in dx2 else 0
+                    dx1 = f'{dx1}e{-(d-d1)}'
+                    dx2 = f'{dx2}e{-(d-d2)}'
                 elif '+/-' in text:
                     x, dx = x_dx.split('+/-')
                     text = f'{x}-{dx}+{dx} {e}'
@@ -3393,11 +3409,11 @@ def rich_value(text=None, domain=None, is_int=None, pdf=None,
                 else:
                     dx1 = f'{dx1} {e}'
                 if 'e' in dx2:
-                    dx2, exp2 = dx1.split('e')
+                    dx2, exp2 = dx2.split('e')
                     exp_ = int(e[1:]) + int(exp2)
                     dx2 = f'{dx2} e{exp_}'
                 else:
-                    dx2 = f'{dx2} {e}'   
+                    dx2 = f'{dx2} {e}'
             x = parse_value(x)
             dx1 = parse_value(dx1)
             dx2 = parse_value(dx2)
@@ -3605,6 +3621,45 @@ def rich_array(array, domain=None, is_int=None, use_default_max_dec=False,
     extra_sf_lim = max(extra_sf_lims)
     rarray.set_params({'min_exp': min_exp, 'extra_sf_lim': extra_sf_lim})
     return rarray
+
+def rich_series(series, domain=None, is_int=None, use_default_max_dec=False,
+               use_default_extra_sf_lim=False):
+    """
+    Convert the values of the input dataframe of text strings to rich values.
+
+    Parameters
+    ----------
+    series : series / list (str)
+        Input series containing text strings representing rich values.
+    domain : list (float), optional
+        The domain of all the entries of the rich serues. If not specified,
+        there are two possibilities: if the entry of the input array is already
+        a rich value, its original domain will be preserved; if not, the
+        default domain will be used, that is, [-np.inf, np.inf].
+    is_int : bool, optional
+        If True, the variable corresponding to the rich array will be an
+        integer, so when creating samples it will have integer values.
+    use_default_max_dec : bool, optional
+        If True and there is a rich value with the uncertainty written between
+        parenthesis, the default maximum number of decimals to use the notation
+        with parenthesis will be used instead of inferring it from the input
+        text.
+    use_default_extra_sf_lim : bool, optional
+        If True, the default limit for extra significant figure will be used
+        instead of inferring it from the input text. This will reduce the
+        computation time a little bit.
+
+    Returns
+    -------
+    rarray : rich array
+        Resulting rich array.
+    """
+    series = copy.copy(series).astype(object)
+    values = rich_array(series.values, domain, is_int, use_default_max_dec,
+                        use_default_extra_sf_lim)
+    series = pd.Series(values, series.index, series.dtype, series.name)
+    rseries = RichSeries(series)
+    return rseries
 
 def rich_dataframe(df, domains=None, are_ints=None, ignore_columns=[],
           use_default_max_dec=False, use_default_extra_sf_lim=False, **kwargs):
@@ -5594,7 +5649,8 @@ def rolling_function(func, x, size, **kwargs):
     x : array
         Input data.
     func : function
-        Function to be applied.
+        Function to be applied, which should have an 'axis' as a second
+        argument (like NumPy functions).
     size : int
         Size of the windows to group the data. It must be odd.
     **kwargs : (various)
@@ -5609,7 +5665,6 @@ def rolling_function(func, x, size, **kwargs):
     def rolling_window(x, window):
         """
         Group the input data according to the specified window size.
-        
         Function by Erik Rigtorp.
 
         Parameters
@@ -5637,7 +5692,7 @@ def rolling_function(func, x, size, **kwargs):
         return x
     size = min(N, size)
     N = len(x)
-    y_c = func(rolling_window(x, size), -1, **kwargs)
+    y_c = func(rolling_window(x, size), axis=-1, **kwargs)
     M = min(N, size) // 2
     min_size = 1
     y_1, y_2 = np.zeros(M), np.zeros(M)
