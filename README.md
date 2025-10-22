@@ -1,4 +1,4 @@
-# RichValues
+# RichValues &nbsp; <img src="logo.png" width=30>
 
 Python 3 library for dealing with numeric values with uncertainties, upper/lower limits and finite intervals, which may be called _rich values_.
 
