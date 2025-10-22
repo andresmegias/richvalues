@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -14,8 +15,8 @@ Andrés Megías Toledano
 import time
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import richvalues as rv
+import matplotlib.pyplot as plt
 
 #%% Initial data.
 
@@ -27,7 +28,7 @@ errorbar_x, errorbar_y = 0.9, 3.6
 
 if generate_data:
     
-    seed = np.random.randint(int(1e4))
+    seed = np.random.randint(int(1e3))
     
     num_points = 30
     np.random.seed(8)
@@ -56,7 +57,7 @@ if generate_data:
     data.to_csv('linear-data.csv', index=False)
     
     np.random.seed(seed)
-    
+
 data = rv.rich_dataframe(pd.read_csv('linear-data.csv'))
 x = rv.rich_array(data['x'].values)
 y = rv.rich_array(data['y'].values)
@@ -70,7 +71,7 @@ t2 = time.time()
 slope, offset = result['parameters']
 dispersion = result['dispersion']
 samples = result['parameters samples']
-print('Elapsed time for the fit: {:.1f} s.'.format(t2-t1))
+print(f'Elapsed time for the fit: {(t2-t1):.1f} s.')
 
 #%% Plots.
 
@@ -80,29 +81,25 @@ color_fit = 'darkblue'
 color_samples = 'tab:blue'
 color_truth = 'tab:orange'
 
+plt.close('all')
 plt.figure(1, figsize=(7,4))
-plt.clf()
 rv.errorbar(x, y, color='gray')
 xlims = plt.xlim()
 ylims = plt.ylim()
 
 if plot_fit:
-    
     x_ = np.linspace(0, xlims[1], 4)
     plt.plot(x_, slope.main * x_ + offset.main, color=color_fit, lw=1,
              label='median fit')
-    plt.plot([], [], alpha=0, label='slope: {}'.format(slope.latex()))
-    plt.plot([], [], alpha=0, label='offset: {}'.format(offset.latex()))
-    plt.plot([], [], alpha=0, label='dispersion: {}'
-             .format(dispersion.latex()))
-    
+    plt.plot([], [], alpha=0, label=f'slope: {slope.latex()}')
+    plt.plot([], [], alpha=0, label=f'offset: {offset.latex()}')
+    plt.plot([], [], alpha=0, label=f'dispersion: {dispersion.latex()}')
     if plot_truth:
         plt.plot(x_, slope_true * x_ + offset_true, color=color_truth,
                  label='ground truth', linestyle='--', lw=1)
-        plt.plot([], [], alpha=0, label='slope: {}'.format(slope_true))
-        plt.plot([], [], alpha=0, label='offset: {}'.format(offset_true))
-        plt.plot([], [], alpha=0, label='dispersion: {}'.format(dispersion_y))
-        
+        plt.plot([], [], alpha=0, label=f'slope: {slope_true}')
+        plt.plot([], [], alpha=0, label=f'offset: {offset_true}')
+        plt.plot([], [], alpha=0, label=f'dispersion: {dispersion_y}')
     num_curves = min(400, samples.shape[0])
     inds = np.arange(samples.shape[0])
     np.random.shuffle(inds)
@@ -135,7 +132,6 @@ if plot_fit:
         xlims, ylims = None, None
     
     plt.figure(2, figsize=(6.5,3.3))
-    plt.clf()
     
     plt.subplot(1,2,1)
     plt.scatter(samples[:,0], samples[:,1], color=color_samples,
