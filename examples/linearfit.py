@@ -106,7 +106,7 @@ if plot_fit:
     num_curves = min(400, samples.shape[0])
     inds = np.arange(samples.shape[0])
     np.random.shuffle(inds)
-    for slope_i, offset_i in samples[inds][:num_curves]:
+    for (slope_i, offset_i) in samples[inds][:num_curves]:
         plt.plot(x_, slope_i * x_ + offset_i, color=color_samples, alpha=0.01,
                  zorder=1)
     plt.legend(fontsize=9)
