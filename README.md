@@ -20,7 +20,7 @@ conda install richvalues -c richvalues
 ~~~
 
 ## Tutorial
-You can check this [quick tutorial](https://github.com/andresmegias/richvalues/blob/main/tutorial.ipynb) to learn the basics of this library.
+You can check this [quick tutorial](https://github.com/andresmegias/richvalues/blob/main/examples/tutorial.ipynb) to learn the basics of this library.
 
 ## Links
 - Project page on PyPI: https://pypi.org/project/richvalues/.
