@@ -15,13 +15,13 @@ Andrés Megías Toledano
 import time
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import richvalues as rv
+import matplotlib.pyplot as plt
 
 #%% Operations.
 
 # Importing of the data.
-data = pd.read_csv('observed-column-densities.csv', comment='#', index_col=0)
+data = pd.read_csv('observed-column-densities.csv', index_col=0, comment='#')
 data = rv.rich_dataframe(data, domains=[0,np.inf])
 
 # Calculation of the ratio of the two columns.
@@ -55,8 +55,8 @@ locs = np.cumsum(locs)
 plot_approx_uncs = False
 
 # Plot.
+plt.close('all')
 plt.figure(1, figsize=(7.5,5.0))
-plt.clf()
 rv.errorbar(locs, ratio, fmt=',', color='black')
 plt.scatter(locs, ratio.mains, color=colors, zorder=3)
 if plot_approx_uncs:
@@ -68,18 +68,18 @@ if plot_approx_uncs:
                        +(col_dens_CH3CN.uncs_eb/col_dens_CH3CN.mains)**2)**0.5
     for i in range(len(ratio_mains)):
         if col_dens_CH3CN[i].is_uplim:
-            ratio_mains[i] = ((col_dens_HC3N[i].main - col_dens_HC3N[i].unc[0])
+            ratio_mains[i] = ((col_dens_HC3N[i].main - 1*col_dens_HC3N[i].unc[0])
                               / col_dens_CH3CN[i].main)
-    ratio_mains[-2] = (col_dens_HC3N[-2].main / col_dens_CH3CN[-2].main
-                       - col_dens_CH3CN[-2].unc[0])
+    ratio_mains[-2] = (col_dens_HC3N[-2].main / (col_dens_CH3CN[-2].main
+                       - 1*col_dens_CH3CN[-2].unc[0]))
     cond = np.isfinite(ratio.mains)
     locs_ = locs[cond]
     ratio_mains = ratio_mains[cond]
     ratio_uncs_eb = ratio_uncs_eb[:,cond]
     cond = ~ rv.rich_array(ratio[np.isfinite(ratio.mains)]).are_lims
     plt.errorbar(locs_[cond], ratio_mains[cond], yerr=ratio_uncs_eb[:,cond],
-                 fmt=',', alpha=0.7, color='chocolate')
-    plt.scatter(locs_, ratio_mains, color='chocolate', alpha=0.7, zorder=3)
+                 fmt=',', alpha=0.8, color='orange', zorder=2)
+    plt.scatter(locs_, ratio_mains, color='orange', alpha=0.8, zorder=2)
 plt.xlim([-0.5, locs[-1] + 0.5])
 plt.axhline(y=1, linestyle='-', linewidth=0.8, color=(0.4,0.4,0.4))
 plt.yscale('log')
@@ -106,7 +106,7 @@ line_locs = [locs[0] - 0.5]
 line_locs += list(locs[edges[1:-1]] - 0.5)
 line_locs += [locs[-1] + 0.5]
 for x in line_locs:
-    plt.axvline(x=x, ymin=-0.5, ymax=1.1, linestyle='--', linewidth=1.,
+    plt.axvline(x, ymin=-0.5, ymax=1.1, linestyle='--', linewidth=1.,
                 color='gray', clip_on=False, zorder=0.5)
 plt.tight_layout()
 plt.show()
