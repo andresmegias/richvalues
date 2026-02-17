@@ -1,5 +1,5 @@
 {% set name = "richvalues" %}
-{% set version = "4.2.14" %}
+{% set version = "4.2.17" %}
 
 package:
   name: "{{ name|lower }}"
@@ -7,21 +7,19 @@ package:
 
 source:
   url: "https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/{{ name }}-{{ version }}.tar.gz"
-  sha256: b4e19e2f3172d8622cb548d61807e19038d8532f214e50fbcf2ab7fc615a89ae
+  sha256: e0062be37b0299cec03270e1023d35617945c8bdb1612e418126ce52e690975c
 
 build:
   number: 0
+  noarch: python
 
 requirements:
   host:
-    - python
+    - python>3.10
+    - setuptools
     - pip
-    - numpy
-    - pandas
-    - scipy
-    - matplotlib
   run:
-    - python
+    - python>3.10
     - numpy
     - pandas
     - scipy
@@ -32,9 +30,9 @@ about:
   license: BSD-3-Clause
   license_family: BSD
   license_file: LICENSE
-  summary: "Python library for working with uncertainties and upper/lower limits"
+  summary: "Python package for working with uncertainties and upper/lower limits"
   doc_url: "https://github.com/andresmegias/richvalues/blob/main/userguide.pdf"
-  description: "RichValues is a Python 3 library for working with numeric values with uncertainties, upper/lower limits and finite intervals, which may be called _rich values_. A user guide and a quick tutorial are available on GitHub: [https://github.com/andresmegias/richvalues/](https://github.com/andresmegias/richvalues/)."
+  description: "RichValues is a Python 3 package for working with numeric values with uncertainties, upper/lower limits and finite intervals, which may be called _rich values_. A user guide and a quick tutorial are available on GitHub: [https://github.com/andresmegias/richvalues/](https://github.com/andresmegias/richvalues/)."
 
 extra:
   recipe-maintainers:

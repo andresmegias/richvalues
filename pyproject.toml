@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "richvalues"
-version = "4.2.14"
-description = "Python library for working with uncertainties and upper/lower limits"
+version = "4.2.17"
+description = "Python package for working with uncertainties and upper/lower limits"
 license = {file="LICENSE"}
 authors = [{name="Andrés Megías Toledano"}]
 readme = "README.md"
