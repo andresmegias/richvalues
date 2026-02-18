@@ -89,7 +89,7 @@ plt.xticks(ticks=locs[cond], labels=names[cond], rotation=90,
 plt.ylabel('HC$_3$N / CH$_3$CN abundance ratio')
 y_top_labels = 1.05
 ax = plt.gca()
-xrange = np.diff(plt.xlim())
+xrange = np.diff(plt.xlim())[0]
 edges = np.array([0, 7, 23, 27, 29])
 text_locs = []
 for i in range(len(edges)-1):
