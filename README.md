@@ -19,8 +19,8 @@ Alternatively, you can use the Conda package installer:
 conda install richvalues -c richvalues
 ~~~
 
-## Tutorial
-You can check this [quick tutorial](https://github.com/andresmegias/richvalues/blob/main/examples/quick-tutorial.ipynb) to learn the basics of this library.
+## Tutorials
+You can check this [quick tutorial](https://github.com/andresmegias/richvalues/blob/main/examples/quick-tutorial.ipynb) to learn the basics of this library. Afterwards, you can check the rest of tutorials and example scripts in the [examples folder](https://github.com/andresmegias/richvalues/blob/main/examples/) folder.
 
 ## Links
 - Project page on PyPI: https://pypi.org/project/richvalues/.
