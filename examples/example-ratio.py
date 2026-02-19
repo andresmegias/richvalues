@@ -26,7 +26,7 @@ data = rv.rich_dataframe(data, domains=[0,np.inf])
 
 # Calculation of the ratio of the two columns.
 t1 = time.time()
-use_create_column = True
+use_create_column = False
 if use_create_column:
     ratio = data.create_column('{}/{}', ['HC3N','CH3CN'],
                 unc_function= lambda a,b,da,db: a/b*((da/a)**2+(db/b)**2)**0.5,
@@ -76,7 +76,7 @@ if plot_approx_uncs:
     locs_ = locs[cond]
     ratio_mains = ratio_mains[cond]
     ratio_uncs_eb = ratio_uncs_eb[:,cond]
-    cond = ~ rv.rich_array(ratio[np.isfinite(ratio.mains)]).are_lims
+    cond = ~rv.rich_array(ratio[np.isfinite(ratio.mains)]).are_lims
     plt.errorbar(locs_[cond], ratio_mains[cond], yerr=ratio_uncs_eb[:,cond],
                  fmt=',', alpha=0.8, color='orange', zorder=2)
     plt.scatter(locs_, ratio_mains, color='orange', alpha=0.8, zorder=2)
