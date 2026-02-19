@@ -83,7 +83,7 @@ if plot_approx_uncs:
 plt.xlim([-0.5, locs[-1] + 0.5])
 plt.axhline(y=1, linestyle='-', linewidth=0.8, color=(0.4,0.4,0.4))
 plt.yscale('log')
-cond = ~ np.isnan(ratio.mains)
+cond = ~np.isnan(ratio.mains)
 plt.xticks(ticks=locs[cond], labels=names[cond], rotation=90,
            fontsize=0.8*fontsize)
 plt.ylabel('HC$_3$N / CH$_3$CN abundance ratio')
@@ -99,7 +99,7 @@ for i in range(len(edges)-1):
 texts = ['starless cores', 'Class 0/I protostars',
          'Class II \nprotoplanetary discs', 'comets']
 fontsizes = fontsize*np.array([0.8, 0.8, 0.7, 0.7])
-for i, text, fs in zip(text_locs, texts, fontsizes):
+for (i, text, fs) in zip(text_locs, texts, fontsizes):
     plt.text(i/xrange, y_top_labels, text, ha='center', va='center',
              fontsize=fs, transform=ax.transAxes)
 line_locs = [locs[0] - 0.5]
