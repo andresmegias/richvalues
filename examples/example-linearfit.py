@@ -70,7 +70,7 @@ result = rv.curve_fit(x, y, lambda x,m,b: m*x+b, guess=[2.,10.],
 t2 = time.time()
 slope, offset = result['parameters']
 dispersion = result['dispersion']
-samples = result['parameters samples']
+samples = result['parameter samples']
 print(f'Elapsed time for the fit: {(t2-t1):.1f} s.')
 
 #%% Plots.
